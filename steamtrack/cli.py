@@ -200,11 +200,15 @@ def cmd_key(conn, args):
     if args.key_action == "add":
         key = "st_" + secrets.token_urlsafe(24)
         conn.execute(
-            "INSERT INTO api_keys (key, label, quota_per_hour, created_at) VALUES (?, ?, ?, ?)",
-            (key, args.label, args.quota, datetime.now(timezone.utc).isoformat()),
+            """INSERT INTO api_keys (key, label, quota_per_hour, is_admin, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (key, args.label, args.quota, 1 if args.admin else 0,
+             datetime.now(timezone.utc).isoformat()),
         )
         print(f"cle creee : {key}")
         print(f"  quota : {args.quota if args.quota else 'illimite'} requetes/heure")
+        if args.admin:
+            print("  administrateur : peut ajouter et supprimer des jeux")
         return 0
 
     if args.key_action == "list":
@@ -255,6 +259,8 @@ def main():
     p.add_argument("label", nargs="?", default="")
     p.add_argument("--quota", type=int, default=None,
                    help="requetes par heure ; omis = illimite")
+    p.add_argument("--admin", action="store_true",
+                   help="autorise l'ajout et la suppression de jeux via l'API")
     p.set_defaults(func=cmd_key)
 
     args = ap.parse_args()

@@ -68,6 +68,45 @@ Le collecteur tourne en continu :
 python3 -m steamtrack.collector
 ```
 
+## API
+
+```bash
+uvicorn steamtrack.api:app --host 0.0.0.0 --port 8080
+```
+
+Documentation interactive sur `/docs`, schema OpenAPI sur `/openapi.json`.
+CORS ouvert : l'API est appelable depuis n'importe quel domaine.
+
+| Route | Description |
+|---|---|
+| `GET /health` | etat du service et curseur du collecteur |
+| `GET /v1/apps` | jeux suivis |
+| `GET /v1/apps/{appid}` | detail, derniere build connue |
+| `GET /v1/apps/{appid}/changes` | historique (`kind`, `since`, `limit`, `offset`) |
+| `GET /v1/apps/{appid}/builds` | raccourci builds |
+| `GET /v1/changes` | flux global (`since` pour le suivi incremental) |
+| `POST /v1/apps?appid=` | suivre un jeu — **cle admin** |
+| `DELETE /v1/apps/{appid}` | retirer un jeu et son historique — **cle admin** |
+
+Authentification par l'en-tete `X-API-Key`. Sans cle, un quota anonyme reduit
+(60 requetes/heure, partage) permet d'essayer l'API. Les reponses portent
+`X-RateLimit-Limit`, `X-RateLimit-Remaining` et `X-RateLimit-Reset`, y compris
+sur un refus 429.
+
+```bash
+curl localhost:8080/v1/apps
+curl -H "X-API-Key: st_..." "localhost:8080/v1/apps/730/changes?kind=build&limit=10"
+curl -X POST -H "X-API-Key: st_admin..." "localhost:8080/v1/apps?appid=440"
+```
+
+### Deux processus distincts
+
+L'API **ne joint jamais Steam**. Le client Steam s'appuie sur gevent, dont le
+monkey patching casse la boucle asyncio du serveur ; les faire cohabiter fige
+le processus. `POST /v1/apps` enregistre donc l'intention et repond
+immediatement, puis le collecteur -- seul autorise a parler a Steam -- recupere
+l'etat initial a son passage suivant.
+
 ## Deploiement
 
 Voir `deploy/steamtrack.service` pour une unite systemd. La base vit dans
@@ -95,5 +134,5 @@ l'API. Les assets y portent leur URL, ce qui permet apercu et telechargement.
 - [x] Collecteur PICS, diff, base
 - [x] CLI : ajouter / retirer / lister / consulter
 - [x] Cles d'API en base
-- [ ] API HTTP
+- [x] API HTTP (cles, quotas, OpenAPI)
 - [ ] Interface web

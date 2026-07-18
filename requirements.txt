@@ -1,2 +1,7 @@
+# Collecteur
 steam[client]==1.4.4
 gevent>=24.0
+
+# API
+fastapi>=0.115
+uvicorn[standard]>=0.30

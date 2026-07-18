@@ -1,0 +1,25 @@
+# API steamtrack. Processus SEPARE du collecteur : le client Steam s'appuie sur
+# gevent, dont le monkey patching est incompatible avec la boucle asyncio du
+# serveur. L'API ne joint jamais Steam ; elle lit la base, et le collecteur
+# execute ce qu'elle enregistre.
+[Unit]
+Description=steamtrack API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=steamtrack
+WorkingDirectory=/opt/steamtrack
+Environment=STEAMTRACK_DB=/opt/steamtrack/data/steamtrack.db
+ExecStart=/opt/steamtrack/.venv/bin/uvicorn steamtrack.api:app --host 127.0.0.1 --port 8080
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/steamtrack/data
+
+[Install]
+WantedBy=multi-user.target
