@@ -95,6 +95,35 @@ async def rate_headers(request: Request, call_next):
 
 # --- lecture -------------------------------------------------------------
 
+@app.get("/", tags=["service"])
+def index(conn=Depends(get_conn)):
+    """Point d'entree : ce que le service expose, sans avoir a lire la doc.
+
+    Sans cette route, la racine renvoie 404 -- c'est pourtant la premiere URL
+    qu'on essaie en decouvrant un service.
+    """
+    apps = conn.execute("SELECT COUNT(*) n FROM apps").fetchone()["n"]
+    changes = conn.execute("SELECT COUNT(*) n FROM changes").fetchone()["n"]
+    return {
+        "service": "steamtrack",
+        "version": app.version,
+        "description": "Historique des changements Steam pour les jeux suivis.",
+        "tracked_apps": apps,
+        "changes": changes,
+        "docs": "/docs",
+        "openapi": "/openapi.json",
+        "endpoints": {
+            "health": "/health",
+            "apps": "/v1/apps",
+            "app": "/v1/apps/{appid}",
+            "changes": "/v1/apps/{appid}/changes",
+            "builds": "/v1/apps/{appid}/builds",
+            "feed": "/v1/changes",
+        },
+        "auth": "en-tete X-API-Key ; sans cle, quota anonyme reduit",
+    }
+
+
 @app.get("/health", tags=["service"])
 def health(conn=Depends(get_conn)):
     apps = conn.execute("SELECT COUNT(*) n FROM apps").fetchone()["n"]
