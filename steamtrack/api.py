@@ -19,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, db, diff
+from . import auth, db, diff, probes
 
 app = FastAPI(
     title="steamtrack",
@@ -255,6 +255,100 @@ def all_changes(
     """Flux global, tous jeux suivis confondus. `since` permet le suivi incremental."""
     events = db.recent_changes(conn, limit=limit, since=since, kind=kind)
     return {"count": len(events), "changes": events}
+
+
+@app.get("/v1/apps/{appid}/players", tags=["stats"])
+def app_players(appid: int, limit: int = Query(500, ge=1, le=5000),
+                conn=Depends(get_conn), who=Depends(caller)):
+    """Frequentation relevee au fil du temps.
+
+    L'historique commence a la mise sous suivi : le nombre de joueurs passe
+    n'est publie nulle part, il n'existe que si on l'a mesure.
+    """
+    if not conn.execute("SELECT 1 FROM apps WHERE appid = ?", (appid,)).fetchone():
+        raise HTTPException(status_code=404, detail="app non suivie")
+    return {
+        "appid": appid,
+        "stats": probes.player_stats(conn, appid),
+        "series": probes.player_series(conn, appid, limit),
+    }
+
+
+@app.get("/v1/apps/{appid}/prices", tags=["stats"])
+def app_prices(appid: int, conn=Depends(get_conn), who=Depends(caller)):
+    """Historique des prix : une entree par changement constate."""
+    if not conn.execute("SELECT 1 FROM apps WHERE appid = ?", (appid,)).fetchone():
+        raise HTTPException(status_code=404, detail="app non suivie")
+    return {"appid": appid, "prices": probes.price_history(conn, appid)}
+
+
+@app.get("/v1/apps/{appid}/depots", tags=["apps"])
+def app_depots(appid: int, conn=Depends(get_conn), who=Depends(caller)):
+    """Depots et branches, lus dans le dernier appinfo connu.
+
+    Vide pour les apps a jeton : Steam ne publie pas leur section depots.
+    """
+    snapshot = db.get_snapshot(conn, appid)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="app non suivie ou pas encore initialisee")
+
+    depots = snapshot.get("depots") or {}
+    branches = depots.get("branches") or {} if isinstance(depots, dict) else {}
+
+    listing = []
+    for key, value in (depots.items() if isinstance(depots, dict) else []):
+        if not key.isdigit() or not isinstance(value, dict):
+            continue
+        manifests = value.get("manifests") or {}
+        public = manifests.get("public") or {}
+        listing.append({
+            "depot": int(key),
+            "name": value.get("name"),
+            "config": value.get("config") or {},
+            "manifest": public.get("gid") if isinstance(public, dict) else public,
+            "size": int(public["size"]) if isinstance(public, dict) and public.get("size") else None,
+            "download": int(public["download"]) if isinstance(public, dict) and public.get("download") else None,
+            "depotfromapp": value.get("depotfromapp"),
+            "shared": bool(value.get("sharedinstall")),
+        })
+
+    return {
+        "appid": appid,
+        "depots_public": not bool(snapshot.get("_missing_token")),
+        "depots": sorted(listing, key=lambda d: d["depot"]),
+        "branches": [
+            {
+                "name": name,
+                "buildid": info.get("buildid") if isinstance(info, dict) else None,
+                "description": info.get("description") if isinstance(info, dict) else None,
+                "updated": info.get("timeupdated") if isinstance(info, dict) else None,
+                "protected": bool(info.get("pwdrequired")) if isinstance(info, dict) else False,
+            }
+            for name, info in branches.items()
+        ],
+    }
+
+
+@app.get("/v1/apps/{appid}/info", tags=["apps"])
+def app_info(appid: int, conn=Depends(get_conn), who=Depends(caller)):
+    """Fiche store : genres, editeurs, date de sortie, note."""
+    if not conn.execute("SELECT 1 FROM apps WHERE appid = ?", (appid,)).fetchone():
+        raise HTTPException(status_code=404, detail="app non suivie")
+    return {"appid": appid, "details": probes.details(conn, appid)}
+
+
+@app.get("/v1/search", tags=["apps"])
+def search(q: str = Query(..., min_length=2, description="nom ou appid"),
+           conn=Depends(get_conn), who=Depends(caller)):
+    """Recherche parmi les jeux suivis."""
+    like = f"%{q.lower()}%"
+    rows = conn.execute(
+        """SELECT appid, name FROM apps
+           WHERE LOWER(name) LIKE ? OR CAST(appid AS TEXT) LIKE ?
+           ORDER BY name LIMIT 25""",
+        (like, like),
+    ).fetchall()
+    return {"query": q, "results": [dict(r) for r in rows]}
 
 
 # --- ecriture (cle administrateur) ---------------------------------------

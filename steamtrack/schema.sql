@@ -53,6 +53,36 @@ CREATE INDEX IF NOT EXISTS idx_changes_app_time ON changes (appid, occurred_at D
 CREATE INDEX IF NOT EXISTS idx_changes_time     ON changes (occurred_at DESC);
 CREATE INDEX IF NOT EXISTS idx_changes_kind     ON changes (kind, occurred_at DESC);
 
+-- Frequentation, releve periodiquement. C'est la donnee signature de SteamDB,
+-- et la seule qui ne se rattrape pas : elle n'existe que si on l'a mesuree.
+CREATE TABLE IF NOT EXISTS player_counts (
+    appid    INTEGER NOT NULL REFERENCES apps(appid) ON DELETE CASCADE,
+    measured TEXT    NOT NULL,
+    players  INTEGER NOT NULL,
+    PRIMARY KEY (appid, measured)
+);
+
+CREATE INDEX IF NOT EXISTS idx_players_app ON player_counts (appid, measured DESC);
+
+-- Prix par devise. Une ligne par changement constate, pas par releve : le prix
+-- bouge rarement, l'enregistrer a chaque sonde gonflerait la base pour rien.
+CREATE TABLE IF NOT EXISTS prices (
+    appid       INTEGER NOT NULL REFERENCES apps(appid) ON DELETE CASCADE,
+    currency    TEXT    NOT NULL,
+    observed    TEXT    NOT NULL,
+    initial     INTEGER,            -- en centimes
+    final       INTEGER,
+    discount    INTEGER,
+    PRIMARY KEY (appid, currency, observed)
+);
+
+-- Fiche store : genres, date de sortie, editeurs. Rafraichie periodiquement.
+CREATE TABLE IF NOT EXISTS app_details (
+    appid      INTEGER PRIMARY KEY REFERENCES apps(appid) ON DELETE CASCADE,
+    data       TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 -- Cles d'API. quota_per_hour NULL = illimite (les tiennes, et les invites).
 -- is_admin autorise en plus l'ajout et la suppression de jeux : ces endpoints
 -- modifient ce que le service collecte, ils ne peuvent pas etre ouverts a tous.

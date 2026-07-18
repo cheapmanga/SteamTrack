@@ -35,7 +35,7 @@
   <button class="loadmore" id="more" hidden>Show more</button>
 </main>
 
-<footer>steamtrack — Steam change history via the anonymous PICS feed.</footer>
+<footer id="foot">steamtrack — Steam change history via the anonymous PICS feed.</footer>
 
 <script src="steamtrack.js"></script>
 <script>
@@ -110,6 +110,18 @@
         sub.textContent = `${all.length} recent changes across ${apps.length} tracked apps.`;
         renderFilters();
         render();
+
+        document.getElementById("foot").replaceChildren(autoRefresh({
+            reload: async () => {
+                const scroll = window.scrollY, seen = new Set(all.map(e => e.id));
+                const data = await api("/v1/changes?limit=300");
+                all = data.changes || [];
+                renderFilters();
+                render();
+                window.scrollTo(0, scroll);
+                return all.filter(e => !seen.has(e.id)).length;
+            },
+        }));
     } catch (err) {
         feedEl.replaceChildren(el("p", "empty err", "Could not load: " + err.message));
     }
