@@ -251,30 +251,26 @@
             viewEl.replaceChildren(el("p", "empty", "No screenshot published."));
             return;
         }
+        // Un seul jeu d'elements pour la visionneuse : videos d'abord, comme
+        // sur la fiche Steam, puis les captures.
+        const items = [
+            ...movies.map(m => ({ kind: "video", src: m.mp4 || m.mp4_480 || m.webm,
+                                  fallback: m.mp4_480 || m.webm,
+                                  thumb: m.thumb, name: m.name })),
+            ...shots.map(sc => ({ kind: "image", src: sc.full, thumb: sc.thumb })),
+        ];
+
         const grid = el("div", "shots");
-        movies.forEach(m => {
-            const a = el("a", "shot");
-            a.href = m.mp4 || m.webm || m.thumb;
-            a.target = "_blank";
-            a.rel = "noopener noreferrer";
+        items.forEach((item, index) => {
+            const cell = el("button", "shot");
             const img = el("img");
-            img.src = m.thumb;
-            img.alt = m.name || "";
+            img.src = item.thumb;
+            img.alt = item.name || "";
             img.loading = "lazy";
-            a.append(img, el("span", "shot-tag", "VIDEO"));
-            grid.append(a);
-        });
-        shots.forEach(sc => {
-            const a = el("a", "shot");
-            a.href = sc.full;
-            a.target = "_blank";
-            a.rel = "noopener noreferrer";
-            const img = el("img");
-            img.src = sc.thumb;
-            img.alt = "";
-            img.loading = "lazy";
-            a.append(img);
-            grid.append(a);
+            cell.append(img);
+            if (item.kind === "video") cell.append(el("span", "shot-tag", "VIDEO"));
+            cell.addEventListener("click", () => openViewer(items, index));
+            grid.append(cell);
         });
         viewEl.replaceChildren(grid);
     }
@@ -513,10 +509,24 @@
     }
 
     // ----- Chargement -----
+    // L'API plafonne a 500 entrees par appel : on pagine jusqu'a tout avoir,
+    // sinon l'historique parait tronque sans le dire (852 changements pour
+    // Fading Echo, dont 352 restaient invisibles).
+    async function loadAllChanges() {
+        const out = [];
+        for (let offset = 0; ; offset += 500) {
+            const page = await api(`/v1/apps/${appid}/changes?limit=500&offset=${offset}`);
+            out.push(...(page.changes || []));
+            if (out.length >= (page.total || 0) || !(page.changes || []).length) break;
+            if (offset > 20000) break;          // garde-fou
+        }
+        return out;
+    }
+
     async function loadAll() {
         const [a, c, d, p, i, sec, rel, pat] = await Promise.all([
             api(`/v1/apps/${appid}`),
-            api(`/v1/apps/${appid}/changes?limit=500`),
+            loadAllChanges(),
             api(`/v1/apps/${appid}/depots`).catch(() => null),
             api(`/v1/apps/${appid}/players`).catch(() => null),
             api(`/v1/apps/${appid}/info`).catch(() => null),
@@ -526,7 +536,7 @@
         ]);
         const before = changes.length ? new Set(changes.map(e => e.id)) : null;
         app = a;
-        changes = c.changes || [];
+        changes = c;
         depots = d;
         players = p;
         info = i ? i.details : null;

@@ -382,3 +382,97 @@ function autoRefresh({ every = 300000, reload, label = "" } = {}) {
 
     return wrap;
 }
+
+// ----- Visionneuse plein ecran -----
+// Les captures et videos s'ouvraient dans un nouvel onglet : on quittait la
+// page pour regarder une image. Elles se consultent maintenant sur place.
+let viewerItems = [];
+let viewerIndex = 0;
+let viewerEl = null;
+
+function openViewer(items, index) {
+    viewerItems = items;
+    viewerIndex = index;
+    if (!viewerEl) buildViewer();
+    viewerEl.hidden = false;
+    document.body.style.overflow = "hidden";
+    showViewerItem();
+}
+
+function buildViewer() {
+    viewerEl = el("div", "viewer");
+    viewerEl.hidden = true;
+
+    const stage = el("div", "viewer-stage");
+    const caption = el("div", "viewer-cap");
+
+    const close = el("button", "viewer-btn viewer-close", "✕");
+    const prev = el("button", "viewer-btn viewer-prev", "‹");
+    const next = el("button", "viewer-btn viewer-next", "›");
+
+    close.addEventListener("click", closeViewer);
+    prev.addEventListener("click", ev => { ev.stopPropagation(); step(-1); });
+    next.addEventListener("click", ev => { ev.stopPropagation(); step(1); });
+
+    // Un clic sur le fond ferme, un clic sur le media non : sinon impossible
+    // d'utiliser les controles d'une video sans fermer la visionneuse.
+    viewerEl.addEventListener("click", ev => {
+        if (ev.target === viewerEl || ev.target === stage) closeViewer();
+    });
+
+    document.addEventListener("keydown", ev => {
+        if (viewerEl.hidden) return;
+        if (ev.key === "Escape") closeViewer();
+        if (ev.key === "ArrowLeft") step(-1);
+        if (ev.key === "ArrowRight") step(1);
+    });
+
+    viewerEl.append(stage, caption, close, prev, next);
+    document.body.append(viewerEl);
+    viewerEl._stage = stage;
+    viewerEl._caption = caption;
+}
+
+function step(delta) {
+    if (!viewerItems.length) return;
+    viewerIndex = (viewerIndex + delta + viewerItems.length) % viewerItems.length;
+    showViewerItem();
+}
+
+function showViewerItem() {
+    const item = viewerItems[viewerIndex];
+    const stage = viewerEl._stage;
+    stage.replaceChildren();
+
+    if (item.kind === "video") {
+        const video = document.createElement("video");
+        video.controls = true;
+        video.autoplay = true;
+        video.poster = item.thumb || "";
+        // Repli sur la version 480p si la source pleine definition manque :
+        // certaines bandes-annonces anciennes n'ont pas de movie_max.
+        video.addEventListener("error", () => {
+            if (item.fallback && video.src !== item.fallback) video.src = item.fallback;
+        }, { once: true });
+        video.src = item.src;
+        stage.append(video);
+    } else {
+        const img = document.createElement("img");
+        img.src = item.src;
+        img.alt = "";
+        stage.append(img);
+    }
+
+    viewerEl._caption.textContent =
+        `${viewerIndex + 1} / ${viewerItems.length}` + (item.name ? ` — ${item.name}` : "");
+}
+
+function closeViewer() {
+    if (!viewerEl) return;
+    // La video doit etre arretee explicitement : la retirer du DOM ne suffit
+    // pas toujours a couper le son.
+    viewerEl._stage.querySelectorAll("video").forEach(v => { v.pause(); v.src = ""; });
+    viewerEl._stage.replaceChildren();
+    viewerEl.hidden = true;
+    document.body.style.overflow = "";
+}

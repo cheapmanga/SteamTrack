@@ -463,11 +463,70 @@ footer {
     grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
     gap: 8px;
 }
-.shot { position: relative; display: block; border-radius: 3px; overflow: hidden; }
+/* .shot est un bouton (il ouvre la visionneuse) : on neutralise l'apparence
+   native pour qu'il reste une vignette. */
+.shot {
+    position: relative; display: block; border-radius: 3px; overflow: hidden;
+    padding: 0; border: none; background: none; cursor: pointer; font: inherit;
+}
 .shot img { display: block; width: 100%; height: auto; background: var(--panel); }
 .shot:hover { outline: 2px solid var(--accent); }
 .shot-tag {
     position: absolute; top: 6px; left: 6px;
     background: rgba(0, 0, 0, 0.7); color: #fff;
     font-size: 10px; letter-spacing: 0.06em; padding: 2px 6px; border-radius: 2px;
+}
+
+/* ----- Visionneuse ----- */
+.viewer {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: rgba(6, 8, 10, 0.94);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 40px 60px;
+}
+.viewer[hidden] { display: none; }
+
+.viewer-stage {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    max-width: 100%;
+    max-height: calc(100vh - 120px);
+}
+.viewer-stage img,
+.viewer-stage video {
+    max-width: 100%;
+    max-height: calc(100vh - 120px);
+    border-radius: 3px;
+    background: #000;
+}
+
+.viewer-cap { color: var(--muted); font-size: 12.5px; }
+
+.viewer-btn {
+    position: absolute;
+    background: rgba(33, 38, 44, 0.9);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 4px;
+    font-size: 20px;
+    line-height: 1;
+    padding: 10px 14px;
+    cursor: pointer;
+}
+.viewer-btn:hover { border-color: var(--accent); color: #fff; }
+.viewer-close { top: 16px; right: 16px; font-size: 16px; }
+.viewer-prev { left: 16px; top: 50%; transform: translateY(-50%); }
+.viewer-next { right: 16px; top: 50%; transform: translateY(-50%); }
+
+@media (max-width: 640px) {
+    .viewer { padding: 56px 12px; }
+    .viewer-prev { left: 6px; }
+    .viewer-next { right: 6px; }
 }
