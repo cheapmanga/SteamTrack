@@ -37,6 +37,13 @@ PLAYERS_EVERY_S = 600
 # Fiche store et prix : ils bougent rarement, inutile d'y revenir souvent.
 DETAILS_EVERY_S = 21600
 
+# Apps sous surveillance rapprochee : le flux PICS reste la source principale,
+# mais on repasse aussi sur elles regulierement. Utile a l'approche d'une
+# sortie, quand la section depots peut s'ouvrir d'un coup sans qu'un changelist
+# visible ne l'annonce.
+WATCH_CLOSELY = {2467880}          # Fading Echo, sortie le 21 juillet 2026
+WATCH_EVERY_S = 120
+
 
 class Collector:
     def __init__(self, conn):
@@ -45,6 +52,7 @@ class Collector:
         self.running = True
         self.last_players = 0.0
         self.last_details = 0.0
+        self.last_watch = 0.0
 
     # -- Steam ------------------------------------------------------------
     def connect(self):
@@ -152,6 +160,22 @@ class Collector:
             self.last_details = now
             log.info("fiches store rafraichies (%d app(s))", len(apps))
 
+    def watch_closely(self):
+        """Repasse frequemment sur les apps a surveiller de pres.
+
+        Le flux PICS annonce les changelists, mais un app qui passe de "jeton
+        requis" a "depots publics" ne declenche pas forcement un changelist
+        visible pour nous. Un balayage regulier garantit qu'on ne rate pas ce
+        basculement le jour d'une sortie.
+        """
+        now = time.time()
+        if now - self.last_watch < WATCH_EVERY_S:
+            return
+        self.last_watch = now
+        watched = [a for a in WATCH_CLOSELY if a in db.tracked_ids(self.conn)]
+        if watched:
+            self.process(watched, "(surveillance rapprochee)")
+
     def bootstrap_pending(self):
         """Complete les jeux suivis qui n'ont pas encore de snapshot."""
         rows = self.conn.execute(
@@ -199,6 +223,7 @@ class Collector:
             # le droit de le faire.
             self.bootstrap_pending()
             self.run_probes()
+            self.watch_closely()
 
             try:
                 resp = self.client.get_changes_since(last, True, False)
