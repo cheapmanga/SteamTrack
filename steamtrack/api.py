@@ -10,11 +10,13 @@ les cles sans quota sont illimitees.
 """
 
 import json
+import os
 import sqlite3
 from pathlib import Path
 from datetime import datetime, timezone
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
+from fastapi import Path as PathParam
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -41,6 +43,18 @@ app.add_middleware(
 )
 
 
+# Un appid hors 32 bits n'existe pas chez Steam, et au-dela de 2**63 sqlite3
+# leve OverflowError avant meme d'executer la requete : sans borne,
+# /v1/apps/99999999999999999999999999 rend un 500. On borne a l'entree.
+MAX_APPID = 2 ** 31 - 1
+APPID = PathParam(..., ge=1, le=MAX_APPID, description="AppID Steam")
+
+# Liste fermee des categories. Sans validation, ?kind=zzz force un balayage
+# complet de changes (le filtre LIKE sur `types` n'a pas d'index) pour ne rien
+# renvoyer. Un 422 immediat coute infiniment moins cher.
+KINDS = "build|depot|branch|store|assets|news|meta"
+
+
 def header_image(conn, appid):
     """URL de la banniere du jeu.
 
@@ -59,6 +73,17 @@ def header_image(conn, appid):
     return f"https://cdn.cloudflare.steamstatic.com/steam/apps/{appid}/header.jpg"
 
 
+@app.on_event("startup")
+def startup():
+    """Migrations et lignes de reference : une fois, pas a chaque requete.
+
+    db.init() prend un verrou d'ecriture (migrations + ligne temoin anonyme).
+    Le faire ici et non dans get_conn garde le chemin des requetes en lecture
+    seule, hors comptage de quota.
+    """
+    db.init().close()
+
+
 def get_conn():
     # SQLite et threads : une connexion par requete, la base est en WAL donc
     # les lectures concurrentes ne se bloquent pas.
@@ -73,20 +98,23 @@ def caller(request: Request,
            conn: sqlite3.Connection = Depends(get_conn),
            x_api_key: str | None = Header(default=None)):
     """Authentifie et applique le quota. Pose les en-tetes de limite."""
-    auth.ensure_anon_row(conn)
     try:
-        who = auth.authenticate(conn, x_api_key)
+        who = auth.authenticate(conn, x_api_key, auth.client_ip(request))
     except ValueError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
     except PermissionError as exc:
         # Les en-tetes de quota doivent etre presents SURTOUT sur le refus :
         # c'est la reponse qu'un client automatise doit savoir interpreter.
+        # Retry-After compte les secondes reellement restantes jusqu'a la
+        # remise a zero, pas une heure pleine : un client refuse a 14h59
+        # doit reessayer dans une minute, pas dans une heure.
+        limit = getattr(exc, "limit", None) or auth.ANON_QUOTA
         raise HTTPException(
             status_code=429,
             detail=str(exc),
             headers={
-                "Retry-After": "3600",
-                "X-RateLimit-Limit": str(exc.args[1]) if len(exc.args) > 1 else "",
+                "Retry-After": str(auth.seconds_until_reset()),
+                "X-RateLimit-Limit": str(limit),
                 "X-RateLimit-Remaining": "0",
                 "X-RateLimit-Reset": auth.next_hour_reset(),
             },
@@ -98,7 +126,7 @@ def caller(request: Request,
 def admin(who=Depends(caller)):
     if not who["admin"]:
         raise HTTPException(status_code=403,
-                            detail="cette operation demande une cle administrateur")
+                            detail="this operation requires an admin API key")
     return who
 
 
@@ -116,7 +144,7 @@ async def rate_headers(request: Request, call_next):
 # --- lecture -------------------------------------------------------------
 
 @app.get("/api", tags=["service"])
-def index(conn=Depends(get_conn)):
+def index(conn=Depends(get_conn), who=Depends(caller)):
     """Point d'entree de l'API : ce que le service expose.
 
     La racine sert l'interface web ; cette description vit donc sur /api.
@@ -126,7 +154,7 @@ def index(conn=Depends(get_conn)):
     return {
         "service": "steamtrack",
         "version": app.version,
-        "description": "Historique des changements Steam pour les jeux suivis.",
+        "description": "Steam change history for tracked games.",
         "tracked_apps": apps,
         "changes": changes,
         "docs": "/docs",
@@ -139,7 +167,8 @@ def index(conn=Depends(get_conn)):
             "builds": "/v1/apps/{appid}/builds",
             "feed": "/v1/changes",
         },
-        "auth": "en-tete X-API-Key ; sans cle, quota anonyme reduit",
+        "auth": ("X-API-Key header; without a key, "
+                 f"{auth.ANON_QUOTA} requests per hour per IP address"),
     }
 
 
@@ -187,10 +216,10 @@ def list_apps(conn=Depends(get_conn), who=Depends(caller)):
 
 
 @app.get("/v1/apps/{appid}", tags=["apps"])
-def get_app(appid: int, conn=Depends(get_conn), who=Depends(caller)):
+def get_app(appid: int = APPID, *, conn=Depends(get_conn), who=Depends(caller)):
     row = conn.execute("SELECT * FROM apps WHERE appid = ?", (appid,)).fetchone()
     if not row:
-        raise HTTPException(status_code=404, detail="app non suivie")
+        raise HTTPException(status_code=404, detail="app not tracked")
     stats = conn.execute(
         """SELECT COUNT(*) n, MAX(occurred_at) last, MIN(occurred_at) first,
                   SUM(kind = 'build') builds
@@ -221,8 +250,10 @@ def get_app(appid: int, conn=Depends(get_conn), who=Depends(caller)):
 
 @app.get("/v1/apps/{appid}/changes", tags=["changes"])
 def app_changes(
-    appid: int,
-    kind: str | None = Query(None, description="build, depot, branch, store, assets, news, meta"),
+    appid: int = APPID,
+    *,
+    kind: str | None = Query(None, pattern=f"^({KINDS})$",
+                             description="build, depot, branch, store, assets, news, meta"),
     since: str | None = Query(None, description="ISO 8601 : ne renvoyer que les changements posterieurs"),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
@@ -230,7 +261,7 @@ def app_changes(
 ):
     """Historique d'un jeu. Un changement mixte est renvoye sous chacune de ses categories."""
     if not conn.execute("SELECT 1 FROM apps WHERE appid = ?", (appid,)).fetchone():
-        raise HTTPException(status_code=404, detail="app non suivie")
+        raise HTTPException(status_code=404, detail="app not tracked")
     events = db.changes_for(conn, appid, limit=limit, offset=offset, kind=kind, since=since)
     total = conn.execute(
         "SELECT COUNT(*) n FROM changes WHERE appid = ?", (appid,)
@@ -242,18 +273,18 @@ def app_changes(
 
 
 @app.get("/v1/apps/{appid}/builds", tags=["changes"])
-def app_builds(appid: int, limit: int = Query(50, ge=1, le=500),
+def app_builds(appid: int = APPID, *, limit: int = Query(50, ge=1, le=500),
                conn=Depends(get_conn), who=Depends(caller)):
     """Raccourci : uniquement les builds, l'usage le plus frequent."""
     if not conn.execute("SELECT 1 FROM apps WHERE appid = ?", (appid,)).fetchone():
-        raise HTTPException(status_code=404, detail="app non suivie")
+        raise HTTPException(status_code=404, detail="app not tracked")
     return {"appid": appid,
             "builds": db.changes_for(conn, appid, limit=limit, kind="build")}
 
 
 @app.get("/v1/changes", tags=["changes"])
 def all_changes(
-    kind: str | None = None,
+    kind: str | None = Query(None, pattern=f"^({KINDS})$"),
     since: str | None = Query(None, description="ISO 8601"),
     limit: int = Query(50, ge=1, le=500),
     conn=Depends(get_conn), who=Depends(caller),
@@ -264,7 +295,7 @@ def all_changes(
 
 
 @app.get("/v1/apps/{appid}/players", tags=["stats"])
-def app_players(appid: int, limit: int = Query(500, ge=1, le=5000),
+def app_players(appid: int = APPID, *, limit: int = Query(500, ge=1, le=5000),
                 conn=Depends(get_conn), who=Depends(caller)):
     """Frequentation relevee au fil du temps.
 
@@ -272,7 +303,7 @@ def app_players(appid: int, limit: int = Query(500, ge=1, le=5000),
     n'est publie nulle part, il n'existe que si on l'a mesure.
     """
     if not conn.execute("SELECT 1 FROM apps WHERE appid = ?", (appid,)).fetchone():
-        raise HTTPException(status_code=404, detail="app non suivie")
+        raise HTTPException(status_code=404, detail="app not tracked")
     return {
         "appid": appid,
         "stats": probes.player_stats(conn, appid),
@@ -281,22 +312,22 @@ def app_players(appid: int, limit: int = Query(500, ge=1, le=5000),
 
 
 @app.get("/v1/apps/{appid}/prices", tags=["stats"])
-def app_prices(appid: int, conn=Depends(get_conn), who=Depends(caller)):
+def app_prices(appid: int = APPID, *, conn=Depends(get_conn), who=Depends(caller)):
     """Historique des prix : une entree par changement constate."""
     if not conn.execute("SELECT 1 FROM apps WHERE appid = ?", (appid,)).fetchone():
-        raise HTTPException(status_code=404, detail="app non suivie")
+        raise HTTPException(status_code=404, detail="app not tracked")
     return {"appid": appid, "prices": probes.price_history(conn, appid)}
 
 
 @app.get("/v1/apps/{appid}/depots", tags=["apps"])
-def app_depots(appid: int, conn=Depends(get_conn), who=Depends(caller)):
+def app_depots(appid: int = APPID, *, conn=Depends(get_conn), who=Depends(caller)):
     """Depots et branches, lus dans le dernier appinfo connu.
 
     Vide pour les apps a jeton : Steam ne publie pas leur section depots.
     """
     snapshot = db.get_snapshot(conn, appid)
     if snapshot is None:
-        raise HTTPException(status_code=404, detail="app non suivie ou pas encore initialisee")
+        raise HTTPException(status_code=404, detail="app not tracked, or not initialised yet")
 
     depots = snapshot.get("depots") or {}
     branches = depots.get("branches") or {} if isinstance(depots, dict) else {}
@@ -336,15 +367,15 @@ def app_depots(appid: int, conn=Depends(get_conn), who=Depends(caller)):
 
 
 @app.get("/v1/apps/{appid}/info", tags=["apps"])
-def app_info(appid: int, conn=Depends(get_conn), who=Depends(caller)):
+def app_info(appid: int = APPID, *, conn=Depends(get_conn), who=Depends(caller)):
     """Fiche store : genres, editeurs, date de sortie, note."""
     if not conn.execute("SELECT 1 FROM apps WHERE appid = ?", (appid,)).fetchone():
-        raise HTTPException(status_code=404, detail="app non suivie")
+        raise HTTPException(status_code=404, detail="app not tracked")
     return {"appid": appid, "details": probes.details(conn, appid)}
 
 
 @app.get("/v1/apps/{appid}/sections", tags=["apps"])
-def app_sections(appid: int, conn=Depends(get_conn), who=Depends(caller)):
+def app_sections(appid: int = APPID, *, conn=Depends(get_conn), who=Depends(caller)):
     """Sections brutes du dernier appinfo connu.
 
     C'est la matiere de la plupart des onglets de SteamDB : `common` porte les
@@ -356,7 +387,7 @@ def app_sections(appid: int, conn=Depends(get_conn), who=Depends(caller)):
     snapshot = db.get_snapshot(conn, appid)
     if snapshot is None:
         raise HTTPException(status_code=404,
-                            detail="app non suivie ou pas encore initialisee")
+                            detail="app not tracked, or not initialised yet")
 
     sections = {k: v for k, v in snapshot.items()
                 if not k.startswith("_") and k != "appid"}
@@ -369,7 +400,7 @@ def app_sections(appid: int, conn=Depends(get_conn), who=Depends(caller)):
 
 
 @app.get("/v1/apps/{appid}/related", tags=["apps"])
-def app_related(appid: int, conn=Depends(get_conn), who=Depends(caller)):
+def app_related(appid: int = APPID, *, conn=Depends(get_conn), who=Depends(caller)):
     """DLC et jeu parent, avec le nom de ceux que l'on suit deja."""
     snapshot = db.get_snapshot(conn, appid) or {}
     extended = snapshot.get("extended") or {}
@@ -392,11 +423,11 @@ def app_related(appid: int, conn=Depends(get_conn), who=Depends(caller)):
 
 
 @app.get("/v1/apps/{appid}/patches", tags=["changes"])
-def app_patches(appid: int, limit: int = Query(100, ge=1, le=500),
+def app_patches(appid: int = APPID, *, limit: int = Query(100, ge=1, le=500),
                 conn=Depends(get_conn), who=Depends(caller)):
     """Suite des builds publiees, du plus recent au plus ancien."""
     if not conn.execute("SELECT 1 FROM apps WHERE appid = ?", (appid,)).fetchone():
-        raise HTTPException(status_code=404, detail="app non suivie")
+        raise HTTPException(status_code=404, detail="app not tracked")
     rows = conn.execute(
         """SELECT change_number, buildid, occurred_at, title FROM changes
            WHERE appid = ? AND (buildid IS NOT NULL OR kind = 'build')
@@ -406,14 +437,40 @@ def app_patches(appid: int, limit: int = Query(100, ge=1, le=500),
     return {"appid": appid, "patches": [dict(r) for r in rows]}
 
 
+@app.get("/v1/stats", tags=["service"])
+def stats(conn=Depends(get_conn), who=Depends(caller)):
+    """Volumetrie du service. Utile publiquement, et pour la supervision."""
+    one = lambda sql: conn.execute(sql).fetchone()[0]
+    size = None
+    try:
+        path = Path(os.environ.get("STEAMTRACK_DB", db.DEFAULT_DB))
+        size = path.stat().st_size if path.exists() else None
+    except OSError:
+        pass
+    return {
+        "tracked_apps": one("SELECT COUNT(*) FROM apps"),
+        "changes": one("SELECT COUNT(*) FROM changes"),
+        "player_samples": one("SELECT COUNT(*) FROM player_counts"),
+        "price_points": one("SELECT COUNT(*) FROM prices"),
+        "oldest_change": one("SELECT MIN(occurred_at) FROM changes"),
+        "newest_change": one("SELECT MAX(occurred_at) FROM changes"),
+        "database_bytes": size,
+    }
+
+
 @app.get("/v1/search", tags=["apps"])
-def search(q: str = Query(..., min_length=2, description="nom ou appid"),
+def search(q: str = Query(..., min_length=2, max_length=64, description="nom ou appid"),
            conn=Depends(get_conn), who=Depends(caller)):
     """Recherche parmi les jeux suivis."""
-    like = f"%{q.lower()}%"
+    # % et _ sont des jokers LIKE : sans echappement, "%" seul renvoie tout.
+    # La requete est parametree, il n'y a pas d'injection, seulement un filtre
+    # que le client pouvait neutraliser.
+    escaped = q.lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    like = f"%{escaped}%"
     rows = conn.execute(
         """SELECT appid, name FROM apps
-           WHERE LOWER(name) LIKE ? OR CAST(appid AS TEXT) LIKE ?
+           WHERE LOWER(name) LIKE ? ESCAPE '\\'
+              OR CAST(appid AS TEXT) LIKE ? ESCAPE '\\'
            ORDER BY name LIMIT 25""",
         (like, like),
     ).fetchall()
@@ -423,7 +480,7 @@ def search(q: str = Query(..., min_length=2, description="nom ou appid"),
 # --- ecriture (cle administrateur) ---------------------------------------
 
 @app.post("/v1/apps", status_code=202, tags=["apps"])
-def add_app(appid: int = Query(..., description="AppID Steam"),
+def add_app(appid: int = Query(..., ge=1, le=MAX_APPID, description="AppID Steam"),
             conn=Depends(get_conn), who=Depends(admin)):
     """Met un jeu sous suivi. L'etat initial est recupere par le collecteur.
 
@@ -436,22 +493,22 @@ def add_app(appid: int = Query(..., description="AppID Steam"),
     L'historique demarre a cet instant : Steam ne conserve pas le passe.
     """
     if not db.add_app(conn, appid):
-        raise HTTPException(status_code=409, detail="app deja suivie")
+        raise HTTPException(status_code=409, detail="app already tracked")
     return {
         "appid": appid,
         "tracked": True,
         "bootstrapped": False,
-        "detail": "etat initial en cours de recuperation par le collecteur",
+        "detail": "initial state is being fetched by the collector",
         "history_starts_now": True,
     }
 
 
 @app.delete("/v1/apps/{appid}", tags=["apps"])
-def delete_app(appid: int, conn=Depends(get_conn), who=Depends(admin)):
+def delete_app(appid: int = APPID, *, conn=Depends(get_conn), who=Depends(admin)):
     """Retire un jeu et tout son historique. Irreversible."""
     removed = db.remove_app(conn, appid)
     if not removed:
-        raise HTTPException(status_code=404, detail="app non suivie")
+        raise HTTPException(status_code=404, detail="app not tracked")
     return {"appid": appid, "removed": True,
             "name": removed["name"], "changes_deleted": removed["changes"]}
 

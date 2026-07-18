@@ -292,7 +292,7 @@ def main():
         datefmt="%H:%M:%S",
     )
 
-    conn = db.connect(args.db)
+    conn = db.init(args.db)
     collector = Collector(conn)
     signal.signal(signal.SIGINT, collector.stop)
     signal.signal(signal.SIGTERM, collector.stop)

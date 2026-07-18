@@ -17,6 +17,7 @@
     <nav>
       <a href="index.html" class="active">Apps</a>
       <a href="changes.html">Changes</a>
+      <a href="about.html">About</a>
       <a href="/docs">API</a>
     </nav>
   </div>
@@ -24,6 +25,10 @@
 
 <main>
   <h1>Tracked apps</h1>
+  <p class="tagline">
+    steamtrack records every update, patch, price move and player count for a hand-picked
+    list of Steam games, straight from Steam's public feed. <a href="about.html">What is this?</a>
+  </p>
   <p class="sub" id="sub">Loading...</p>
 
   <div id="content">
@@ -45,12 +50,18 @@
             api("/health"),
         ]);
 
-        sub.textContent = `${apps.length} app${apps.length > 1 ? "s" : ""} tracked, `
-            + `${health.changes} changes recorded`;
+        // Le pluriel se decide sur "different de 1" et non "> 1" : a zero,
+        // "0 app tracked" etait faux.
+        const plural = n => (n === 1 ? "" : "s");
+        sub.textContent = `${apps.length} app${plural(apps.length)} tracked, `
+            + `${health.changes} change${plural(health.changes)} recorded`;
 
         if (!apps.length) {
+            // Message destine a un visiteur, pas a l'exploitant : la commande
+            // CLI qui figurait ici n'a aucun sens pour le public et exposait le
+            // fonctionnement interne du service.
             content.replaceChildren(el("p", "empty",
-                "No app tracked yet. Add one with: steamtrack add 730"));
+                "No games are being tracked yet. Check back soon."));
             return;
         }
 

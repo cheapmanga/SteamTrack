@@ -530,3 +530,102 @@ footer {
     .viewer-prev { left: 6px; }
     .viewer-next { right: 6px; }
 }
+
+/* ----- Pages de texte (About) ----- */
+/* min-width: 0 est indispensable : sans lui un bloc de code large pousse la
+   colonne au-dela de la fenetre au lieu de defiler dans son conteneur. */
+.prose { max-width: 780px; min-width: 0; }
+
+.prose h2 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 34px 0 10px;
+    padding-bottom: 7px;
+    border-bottom: 1px solid var(--border);
+}
+.prose h3 {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text);
+    margin: 20px 0 6px;
+}
+.prose p { margin: 0 0 12px; color: #cbd1d6; }
+.prose ul { margin: 0 0 12px; padding-left: 20px; color: #cbd1d6; }
+.prose li { margin-bottom: 6px; }
+.prose strong { color: #fff; font-weight: 600; }
+
+/* Accroche de la page d'accueil : une ligne qui dit ou l'on est. */
+.tagline { font-size: 14px; color: #cbd1d6; margin: 0 0 18px; max-width: 720px; }
+
+/* Encadre pour la limite d'historique : c'est la premiere question que se pose
+   un visiteur, elle ne doit pas se fondre dans le texte. */
+.callout {
+    background: #1b2530;
+    border: 1px solid #2f4557;
+    border-left: 3px solid var(--accent);
+    border-radius: 3px;
+    padding: 13px 15px;
+    margin: 0 0 14px;
+}
+.callout p:last-child { margin-bottom: 0; }
+
+/* ----- Blocs de code copiables ----- */
+.codeblock { position: relative; margin: 0 0 12px; }
+
+.codeblock pre {
+    margin: 0;
+    background: #0f1216;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 11px 13px;
+    /* Le padding droit reserve la place du bouton "Copy" pour qu'il ne
+       recouvre jamais le debut d'une commande. */
+    padding-right: 74px;
+    overflow-x: auto;
+    font: 12.5px/1.6 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color: #cbd1d6;
+}
+.codeblock pre .c { color: var(--dim); }   /* commentaire shell */
+
+.copy {
+    position: absolute;
+    top: 7px;
+    right: 7px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 3px;
+    padding: 3px 9px;
+    font: inherit;
+    font-size: 11.5px;
+    cursor: pointer;
+}
+.copy:hover { color: #fff; border-color: var(--accent); }
+.copy.done { color: var(--added); border-color: var(--added); }
+
+/* Sur telephone la commande defile sous le bouton et passe derriere lui : on
+   sort le bouton du bloc et on le pose au-dessus, aligne a droite. */
+@media (max-width: 640px) {
+    .codeblock { display: flex; flex-direction: column-reverse; align-items: stretch; }
+    .codeblock pre { padding-right: 13px; }
+    .copy { position: static; align-self: flex-end; margin-bottom: 5px; }
+}
+
+.prose code {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 12.5px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 1px 5px;
+    overflow-wrap: anywhere;
+}
+
+.disclaimer {
+    color: var(--dim);
+    font-size: 12.5px;
+    line-height: 1.6;
+    border-top: 1px solid var(--border);
+    margin-top: 34px;
+    padding-top: 16px;
+}

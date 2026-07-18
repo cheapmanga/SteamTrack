@@ -2,3 +2,17 @@ data/
 .venv/
 __pycache__/
 *.pyc
+
+# Bases et sauvegardes. Une base contient les cles d'API en clair
+# (api_keys.key) : elle ne doit jamais partir dans un commit. STEAMTRACK_DB et
+# STEAMTRACK_BACKUP_DIR peuvent pointer ailleurs que data/, d'ou ces motifs.
+backups/
+*.db
+*.db-wal
+*.db-shm
+*.db.gz
+*.db.part
+*.init-lock
+*.sqlite
+*.sqlite3
+.env

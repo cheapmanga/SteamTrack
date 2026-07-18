@@ -4,6 +4,7 @@ Le collecteur ecrit en continu pendant que l'API lit : WAL permet aux deux de
 cohabiter sans se bloquer, ce que le mode journal par defaut ne fait pas.
 """
 
+import fcntl
 import json
 import os
 import sqlite3
@@ -20,7 +21,23 @@ def now():
 
 
 def connect(path=None):
-    """Ouvre la base et applique le schema (idempotent)."""
+    """Ouvre une connexion. N'ECRIT RIEN : ni schema, ni migration.
+
+    C'est le chemin des requetes HTTP : l'API ouvre une connexion par requete.
+    Tout DDL pose ici se payait a chaque lecture. Deux defauts constates avant
+    d'en sortir le schema et les migrations :
+
+      - `migrate()` appelle dedupe_news, un DELETE sur toute la table changes,
+        donc une transaction d'ECRITURE par requete : 19 ms mesures sur 30 000
+        news, et surtout un 500 apres 30 s d'attente des que le collecteur
+        tenait le verrou d'ecriture. Les 3 workers triplaient la contention.
+      - `executescript(SCHEMA)` rejouait tout le DDL par requete, et entrait en
+        collision avec la migration d'un autre worker au demarrage
+        (`sqlite3.OperationalError: no such column: name` sur /health).
+
+    La creation du schema et les migrations vivent dans `init()`, appele une
+    fois par processus au demarrage.
+    """
     path = Path(path or os.environ.get("STEAMTRACK_DB", DEFAULT_DB))
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -32,8 +49,44 @@ def connect(path=None):
     conn = sqlite3.connect(path, timeout=30, isolation_level=None,
                            check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    conn.executescript(SCHEMA.read_text(encoding="utf-8"))
-    migrate(conn)
+    # foreign_keys est un reglage PAR CONNEXION : il etait pose par schema.sql,
+    # qu'on ne rejoue plus ici. Sans cette ligne, les contraintes de cle
+    # etrangere (api_usage -> api_keys, changes -> apps) ne seraient plus
+    # verifiees sur les connexions de l'API. journal_mode=WAL, lui, est un
+    # reglage persistant du fichier : il est pose une fois par init().
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+
+def init(path=None):
+    """Ouvre la base, cree le schema et applique les migrations.
+
+    A appeler une fois par processus au demarrage : API (evenement startup),
+    collecteur et CLI. Renvoie la connexion, utilisable ensuite.
+
+    L'ensemble est serialise par un verrou de fichier : l'API tourne en 3
+    workers qui demarrent tous en meme temps, et deux migrations concurrentes se
+    marchaient dessus (une requete servie pendant le DROP/RENAME de `changes`
+    voyait un schema a mi-chemin -- `no such column: name` sur /health).
+
+    Un verrou SQL ne conviendrait pas : `executescript` emet un COMMIT implicite
+    avant de s'executer, il romprait la transaction censee proteger la
+    migration. flock est pris sur un fichier voisin, tenu jusqu'a la fin, et
+    relache automatiquement si le processus meurt en cours de route.
+    """
+    from . import auth
+
+    path = Path(path or os.environ.get("STEAMTRACK_DB", DEFAULT_DB))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = path.with_suffix(path.suffix + ".init-lock")
+
+    with open(lock_path, "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        conn = connect(path)
+        conn.executescript(SCHEMA.read_text(encoding="utf-8"))
+        migrate(conn)
+        auth.ensure_anon_row(conn)
+        fcntl.flock(lock, fcntl.LOCK_UN)
     return conn
 
 
@@ -90,11 +143,15 @@ def widen_changes_key(conn):
     conn.execute("BEGIN IMMEDIATE")
     try:
         conn.execute(new_table)
+        # `id` est recopie explicitement : l'API l'expose (db.changes_for) et le
+        # front s'en sert pour compter les nouveautes. Le laisser a
+        # l'AUTOINCREMENT de la nouvelle table renumeroterait tout, et chaque
+        # reference externe a un id designerait un autre evenement.
         conn.execute(
             """INSERT OR IGNORE INTO changes_new
-                   (appid, change_number, kind, types, title, buildid,
+                   (id, appid, change_number, kind, types, title, buildid,
                     occurred_at, payload, source)
-               SELECT appid, change_number, kind, types, title, buildid,
+               SELECT id, appid, change_number, kind, types, title, buildid,
                       occurred_at, payload, source
                FROM changes"""
         )
@@ -119,6 +176,14 @@ def dedupe_news(conn):
     meme jeu en meme temps (collecteur et CLI) inseraient chacun leur copie.
 
     On nettoie l'existant, puis un index unique partiel empeche la reapparition.
+
+    Les news SANS gid sont exclues du dedoublonnage. Sans ce filtre, toutes
+    celles d'un meme app tombent dans une seule partition (json_extract renvoie
+    NULL, et PARTITION BY regroupe les NULL entre eux) et toutes sauf une sont
+    supprimees definitivement et sans trace. En pratique news.backfill
+    renseigne toujours gid, mais un seul item Steam sans gid suffisait a
+    declencher la perte. Sans gid il n'existe de toute façon aucun critere
+    d'identite fiable : on garde tout.
     """
     conn.execute(
         """DELETE FROM changes WHERE id IN (
@@ -127,7 +192,9 @@ def dedupe_news(conn):
                        PARTITION BY appid, json_extract(payload, '$.gid')
                        ORDER BY id
                    ) AS rang
-                   FROM changes WHERE source = 'news'
+                   FROM changes
+                   WHERE source = 'news'
+                     AND json_extract(payload, '$.gid') IS NOT NULL
                ) WHERE rang > 1
            )"""
     )
