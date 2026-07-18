@@ -65,15 +65,10 @@ def backfill(conn, appid, count=200):
                 "gid": item.get("gid"),
             },
         }
-        # La contrainte UNIQUE porte sur le changenumber, nul pour les news :
-        # on deduplique donc sur le gid, identifiant stable de l'annonce.
-        known = conn.execute(
-            "SELECT 1 FROM changes WHERE appid = ? AND source = 'news' "
-            "AND json_extract(payload, '$.gid') = ?",
-            (appid, item.get("gid")),
-        ).fetchone()
-        if known:
-            continue
+        # La deduplication est garantie par l'index unique partiel sur le gid
+        # (voir db.dedupe_news) : INSERT OR IGNORE suffit, et c'est atomique --
+        # une verification prealable laissait passer les doublons quand deux
+        # processus initialisaient le meme jeu simultanement.
         if db.add_change(conn, appid, event):
             added += 1
     return added

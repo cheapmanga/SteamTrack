@@ -44,6 +44,36 @@ def migrate(conn):
         columns = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
         if column not in columns:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {spec}")
+    dedupe_news(conn)
+
+
+def dedupe_news(conn):
+    """Garantit l'unicite des annonces au niveau de la base.
+
+    La contrainte UNIQUE (appid, change_number, source) ne couvre pas les news :
+    leur change_number est NULL, et en SQL NULL est distinct de NULL, donc la
+    contrainte ne se declenche jamais. La deduplication ne tenait que sur une
+    verification applicative, non atomique -- deux processus qui initialisent le
+    meme jeu en meme temps (collecteur et CLI) inseraient chacun leur copie.
+
+    On nettoie l'existant, puis un index unique partiel empeche la reapparition.
+    """
+    conn.execute(
+        """DELETE FROM changes WHERE id IN (
+               SELECT id FROM (
+                   SELECT id, ROW_NUMBER() OVER (
+                       PARTITION BY appid, json_extract(payload, '$.gid')
+                       ORDER BY id
+                   ) AS rang
+                   FROM changes WHERE source = 'news'
+               ) WHERE rang > 1
+           )"""
+    )
+    conn.execute(
+        """CREATE UNIQUE INDEX IF NOT EXISTS idx_news_unique
+           ON changes (appid, json_extract(payload, '$.gid'))
+           WHERE source = 'news'"""
+    )
 
 
 # --- apps ----------------------------------------------------------------
