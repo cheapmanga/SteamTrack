@@ -11,13 +11,13 @@ heure et par cle, plutot qu'un journal de requetes qui grossirait sans fin.
 
 from datetime import datetime, timedelta, timezone
 
-# Sans cle, on autorise assez pour naviguer et essayer l'API, mais pas pour
-# s'en servir en production : c'est ce qui pousse a demander une cle.
+# TEMPORAIRE : acces anonyme illimite, le temps de la mise au point.
 #
-# Le quota doit rester large : l'interface web tape la meme API sans cle, et
-# une seule page consomme cinq requetes. A 60/heure, le site devenait
-# inutilisable au bout d'une douzaine de visites.
-ANON_QUOTA = 1200
+# None desactive tout comptage. A remettre a une valeur finie avant toute
+# exposition hors du reseau local, sinon n'importe qui peut marteler l'API.
+# Le mecanisme de quota reste intact : seules les cles nommees le portent
+# encore, il suffit de rendre un nombre a cette constante pour le reactiver.
+ANON_QUOTA = None
 ANON_KEY = "anon"
 
 

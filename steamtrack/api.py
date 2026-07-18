@@ -387,9 +387,27 @@ def delete_app(appid: int, conn=Depends(get_conn), who=Depends(admin)):
             "name": removed["name"], "changes_deleted": removed["changes"]}
 
 
+class RevalidatingStatics(StaticFiles):
+    """Fichiers statiques toujours revalides aupres du serveur.
+
+    Starlette envoie ETag et Last-Modified, mais aucun Cache-Control. Sans lui,
+    le navigateur applique une heuristique de fraicheur et peut resservir un
+    fichier sans rien demander : une page mise a jour se retrouvait alors avec
+    l'ancien script, et appelait une fonction qui n'existait pas encore.
+
+    no-cache n'interdit pas le cache, il impose de le revalider : la reponse
+    reste un 304 vide tant que le fichier n'a pas bouge.
+    """
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers.setdefault("Cache-Control", "no-cache, must-revalidate")
+        return response
+
+
 # L'interface web est servie a la racine. Ce montage doit rester en DERNIER :
 # monte sur "/", il capture toute route enregistree apres lui, ce qui rendrait
 # l'API inaccessible.
 WEB = Path(__file__).resolve().parent.parent / "web"
 if WEB.is_dir():
-    app.mount("/", StaticFiles(directory=WEB, html=True), name="web")
+    app.mount("/", RevalidatingStatics(directory=WEB, html=True), name="web")
