@@ -10,6 +10,7 @@
 
 import argparse
 import json
+import pathlib
 import re
 import secrets
 import sys
@@ -196,6 +197,37 @@ def _print_tree(nodes, indent):
         _print_tree(node.get("children"), indent + 2)
 
 
+def cmd_import(conn, args):
+    from . import steamdb_import
+
+    appid, _ = pick(args.game)
+    if appid is None:
+        return 1
+    if not conn.execute("SELECT 1 FROM apps WHERE appid = ?", (appid,)).fetchone():
+        print(f"app {appid} n'est pas suivie. Ajoutez-la d'abord : steamtrack add {appid}")
+        return 1
+
+    path = pathlib.Path(args.html)
+    if not path.exists():
+        print(f"fichier introuvable : {path}")
+        return 1
+
+    print(f"import de {path.name} pour l'app {appid}...")
+    try:
+        imported, skipped = steamdb_import.import_history(conn, appid, path)
+    except SystemExit as exc:
+        print(f"  {exc}")
+        return 1
+
+    print(f"  {imported} evenement(s) importe(s), {skipped} deja connu(s)")
+    if imported:
+        oldest = conn.execute(
+            "SELECT MIN(occurred_at) t FROM changes WHERE appid = ? AND source = 'import'",
+            (appid,)).fetchone()["t"]
+        print(f"  l'historique remonte desormais au {oldest[:10]}")
+    return 0
+
+
 def cmd_reclean(conn, args):
     from . import news
 
@@ -266,6 +298,11 @@ def main():
     p.add_argument("--limit", type=int, default=10)
     p.add_argument("--kind")
     p.set_defaults(func=cmd_show)
+
+    p = sub.add_parser("import", help="importer un historique SteamDB (page History en HTML)")
+    p.add_argument("game", help="appid ou nom du jeu")
+    p.add_argument("html", help="page History de SteamDB sauvegardee")
+    p.set_defaults(func=cmd_import)
 
     p = sub.add_parser("reclean", help="repasser le nettoyage BBCode sur les annonces")
     p.add_argument("game", nargs="?")

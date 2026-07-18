@@ -82,7 +82,16 @@
         add("Builds", String(app.builds));
         add("Latest build", app.latest_buildid || "-", true);
         add("Last change", ago(app.last_change_at));
-        add("Tracking since", ago(app.tracking_since));
+        // L'historique peut preceder la mise sous suivi quand un export
+        // SteamDB a ete importe : c'est sa profondeur qui interesse.
+        const from = app.history_from || app.tracking_since;
+        const box = el("div");
+        box.append(el("span", "fact-label", "History from"));
+        const value = el("span", "fact-value", from ? stamp(from).split(",")[0] : "-");
+        value.title = from === app.history_from && app.history_from < app.tracking_since
+            ? "Imported from a SteamDB export" : "";
+        box.append(value);
+        facts.append(box);
         body.append(facts);
 
         wrap.append(img, body);

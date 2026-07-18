@@ -42,7 +42,11 @@ CREATE TABLE IF NOT EXISTS changes (
     source        TEXT    NOT NULL,     -- pics | news | import
     -- Un meme changelist ne doit etre enregistre qu'une fois par app, meme si
     -- le collecteur redemarre ou rejoue une fenetre.
-    UNIQUE (appid, change_number, source)
+    --
+    -- La date fait partie de la cle : SteamDB publie plusieurs panneaux sous un
+    -- meme changeid, parfois a des dates differentes. Sans elle, l'import
+    -- ecrasait des evenements distincts -- dont une build.
+    UNIQUE (appid, change_number, source, occurred_at)
 );
 
 CREATE INDEX IF NOT EXISTS idx_changes_app_time ON changes (appid, occurred_at DESC);
