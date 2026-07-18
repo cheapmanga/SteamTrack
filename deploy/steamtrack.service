@@ -1,0 +1,24 @@
+# Collecteur steamtrack. A copier dans /etc/systemd/system/ puis :
+#   systemctl daemon-reload && systemctl enable --now steamtrack
+[Unit]
+Description=steamtrack collector (flux PICS Steam)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=steamtrack
+WorkingDirectory=/opt/steamtrack
+Environment=STEAMTRACK_DB=/opt/steamtrack/data/steamtrack.db
+ExecStart=/opt/steamtrack/.venv/bin/python -u -m steamtrack.collector
+Restart=always
+RestartSec=15
+# Le collecteur ne fait que lire le reseau et ecrire sa base.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/steamtrack/data
+
+[Install]
+WantedBy=multi-user.target
