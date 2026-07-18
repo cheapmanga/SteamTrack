@@ -44,7 +44,63 @@ def migrate(conn):
         columns = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
         if column not in columns:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {spec}")
+    widen_changes_key(conn)
     dedupe_news(conn)
+
+
+def widen_changes_key(conn):
+    """Ajoute occurred_at a la cle d'unicite de `changes`.
+
+    SQLite ne sait pas modifier une contrainte : il faut recreer la table. La
+    contrainte d'origine, (appid, change_number, source), ecrasait des
+    evenements pourtant distincts -- SteamDB publie plusieurs panneaux sous un
+    meme changeid, et l'import en perdait, dont une build.
+    """
+    sql = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='changes'"
+    ).fetchone()
+    if not sql or "occurred_at)" in sql["sql"].replace(" ", "").replace("\n", ""):
+        return
+    if "UNIQUE(appid,change_number,source)" not in sql["sql"].replace(" ", "").replace("\n", ""):
+        return
+
+    # La table est recreee a la main : executescript() emet un COMMIT implicite,
+    # qui romprait la transaction et laisserait la migration a mi-chemin.
+    new_table = """
+        CREATE TABLE changes_new (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            appid         INTEGER NOT NULL REFERENCES apps(appid) ON DELETE CASCADE,
+            change_number INTEGER,
+            kind          TEXT    NOT NULL,
+            types         TEXT    NOT NULL,
+            title         TEXT    NOT NULL,
+            buildid       TEXT,
+            occurred_at   TEXT    NOT NULL,
+            payload       TEXT    NOT NULL,
+            source        TEXT    NOT NULL,
+            UNIQUE (appid, change_number, source, occurred_at)
+        )"""
+
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        conn.execute(new_table)
+        conn.execute(
+            """INSERT OR IGNORE INTO changes_new
+                   (appid, change_number, kind, types, title, buildid,
+                    occurred_at, payload, source)
+               SELECT appid, change_number, kind, types, title, buildid,
+                      occurred_at, payload, source
+               FROM changes"""
+        )
+        conn.execute("DROP TABLE changes")
+        conn.execute("ALTER TABLE changes_new RENAME TO changes")
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+
+    # Les index suivaient l'ancienne table : ils ont saute avec le DROP.
+    conn.executescript(SCHEMA.read_text(encoding="utf-8"))
 
 
 def dedupe_news(conn):

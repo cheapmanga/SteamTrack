@@ -192,7 +192,7 @@ def get_app(appid: int, conn=Depends(get_conn), who=Depends(caller)):
     if not row:
         raise HTTPException(status_code=404, detail="app non suivie")
     stats = conn.execute(
-        """SELECT COUNT(*) n, MAX(occurred_at) last,
+        """SELECT COUNT(*) n, MAX(occurred_at) last, MIN(occurred_at) first,
                   SUM(kind = 'build') builds
            FROM changes WHERE appid = ?""", (appid,)
     ).fetchone()
@@ -206,6 +206,9 @@ def get_app(appid: int, conn=Depends(get_conn), who=Depends(caller)):
         "name": row["name"],
         "added_at": row["added_at"],
         "tracking_since": row["added_at"],
+        # Profondeur reelle de l'historique : un import SteamDB peut le faire
+        # remonter bien avant la mise sous suivi.
+        "history_from": stats["first"],
         "changes": stats["n"],
         "builds": stats["builds"] or 0,
         "last_change_at": stats["last"],
