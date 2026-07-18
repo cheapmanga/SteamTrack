@@ -224,7 +224,9 @@ function bindMedia(root) {
     // Steam autorisent (access-control-allow-origin: *).
     root.addEventListener("click", async ev => {
         const link = ev.target.closest("a.media");
-        if (!link) return;
+        // .asset-link a son propre handler (il ouvre la visionneuse) : sans
+        // cette exception, le clic declencherait aussi un telechargement.
+        if (!link || link.classList.contains("asset-link")) return;
         ev.preventDefault();
         hidePreview();
         const name = decodeURIComponent(link.href.split("/").pop().split("?")[0]) || "asset";
@@ -475,4 +477,44 @@ function closeViewer() {
     viewerEl._stage.replaceChildren();
     viewerEl.hidden = true;
     document.body.style.overflow = "";
+}
+
+// ----- Assets dans les sections de l'appinfo -----
+// PICS ne stocke pas d'URL, seulement des references. Trois conventions
+// cohabitent, toutes verifiees contre le CDN :
+//   - un hash nu de 40 caracteres (icon, clienticon, logo) ;
+//   - un chemin "<hash>/<fichier>.jpg" (header_image, small_capsule) ;
+//   - un nom de fichier seul (library_assets_full).
+const HASH_ONLY = /^[0-9a-f]{40}(_thumb)?$/i;
+const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|ico|bmp)$/i;
+
+// Ces champs portent bien un hash, mais l'image derriere n'est pas une JPEG
+// web : ce sont les icones du client (.ico, .icns, .tga). Construire une URL
+// pour elles donnait des 404 et une vignette cassee.
+const NON_WEB_ICONS = new Set(["clienticon", "clienticns", "clienttga", "linuxclienticon"]);
+
+function assetUrlFor(appid, value, field) {
+    if (typeof value !== "string" || !value || value.length > 300) return null;
+    if (field && NON_WEB_ICONS.has(field)) return null;
+    if (HASH_ONLY.test(value)) {
+        return `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${value}.jpg`;
+    }
+    if (IMAGE_EXT.test(value.split("?")[0])) {
+        if (value.startsWith("https://")) return value;
+        if (value.startsWith("http://")) return null;
+        return `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${appid}/${value}`;
+    }
+    return null;
+}
+
+// Rassemble tous les assets d'une section pour que la visionneuse puisse
+// naviguer de l'un a l'autre, comme dans l'onglet Screenshots.
+function collectAssets(appid, obj, out = [], path = "") {
+    if (obj && typeof obj === "object") {
+        Object.entries(obj).forEach(([k, v]) => collectAssets(appid, v, out, path ? `${path}/${k}` : k));
+    } else {
+        const url = assetUrlFor(appid, obj, path.split("/").pop());
+        if (url) out.push({ kind: "image", src: url, thumb: url, name: path });
+    }
+    return out;
 }
