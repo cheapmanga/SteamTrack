@@ -98,6 +98,37 @@ def sample_details(conn, appid, cc=DEFAULT_CC):
         "platforms": data.get("platforms") or {},
         "required_age": data.get("required_age"),
         "website": data.get("website"),
+        "short_description": data.get("short_description"),
+        "support": data.get("support_info") or {},
+        # Screenshots et packages viennent de la fiche store, pas de PICS :
+        # ce sont les deux seuls onglets de SteamDB que l'appinfo ne porte pas.
+        "screenshots": [
+            {"id": s.get("id"),
+             "thumb": s.get("path_thumbnail"),
+             "full": s.get("path_full")}
+            for s in (data.get("screenshots") or [])
+        ][:40],
+        "movies": [
+            {"id": m.get("id"), "name": m.get("name"),
+             "thumb": m.get("thumbnail"),
+             "webm": (m.get("webm") or {}).get("max"),
+             "mp4": (m.get("mp4") or {}).get("max")}
+            for m in (data.get("movies") or [])
+        ][:20],
+        "packages": [
+            {
+                "title": g.get("title"),
+                "subs": [
+                    {"packageid": sub.get("packageid"),
+                     "text": sub.get("option_text"),
+                     "price": sub.get("price_in_cents_with_discount")}
+                    for sub in (g.get("subs") or [])
+                ],
+            }
+            for g in (data.get("package_groups") or [])
+        ],
+        "dlc": data.get("dlc") or [],
+        "fullgame": data.get("fullgame") or {},
     }
     conn.execute(
         """INSERT INTO app_details (appid, data, updated_at) VALUES (?, ?, ?)

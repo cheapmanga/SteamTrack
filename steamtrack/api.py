@@ -337,6 +337,69 @@ def app_info(appid: int, conn=Depends(get_conn), who=Depends(caller)):
     return {"appid": appid, "details": probes.details(conn, appid)}
 
 
+@app.get("/v1/apps/{appid}/sections", tags=["apps"])
+def app_sections(appid: int, conn=Depends(get_conn), who=Depends(caller)):
+    """Sections brutes du dernier appinfo connu.
+
+    C'est la matiere de la plupart des onglets de SteamDB : `common` porte les
+    metadonnees, `config` la configuration de lancement, `ufs` la sauvegarde
+    dans le nuage, `extended` les DLC et le repertoire d'installation. Aucune
+    collecte supplementaire n'est necessaire : tout arrive dans le meme
+    appinfo que celui deja diffe a chaque changement.
+    """
+    snapshot = db.get_snapshot(conn, appid)
+    if snapshot is None:
+        raise HTTPException(status_code=404,
+                            detail="app non suivie ou pas encore initialisee")
+
+    sections = {k: v for k, v in snapshot.items()
+                if not k.startswith("_") and k != "appid"}
+    return {
+        "appid": appid,
+        "change_number": snapshot.get("_change_number"),
+        "sections": sections,
+        "available": sorted(sections),
+    }
+
+
+@app.get("/v1/apps/{appid}/related", tags=["apps"])
+def app_related(appid: int, conn=Depends(get_conn), who=Depends(caller)):
+    """DLC et jeu parent, avec le nom de ceux que l'on suit deja."""
+    snapshot = db.get_snapshot(conn, appid) or {}
+    extended = snapshot.get("extended") or {}
+    common = snapshot.get("common") or {}
+
+    raw = extended.get("listofdlc") or ""
+    dlc_ids = [int(x) for x in str(raw).split(",") if x.strip().isdigit()]
+
+    details = probes.details(conn, appid) or {}
+    for extra in details.get("dlc") or []:
+        if int(extra) not in dlc_ids:
+            dlc_ids.append(int(extra))
+
+    known = {r["appid"]: r["name"] for r in conn.execute("SELECT appid, name FROM apps")}
+    return {
+        "appid": appid,
+        "parent": common.get("parent") or (details.get("fullgame") or {}).get("appid"),
+        "dlc": [{"appid": d, "name": known.get(d), "tracked": d in known} for d in dlc_ids],
+    }
+
+
+@app.get("/v1/apps/{appid}/patches", tags=["changes"])
+def app_patches(appid: int, limit: int = Query(100, ge=1, le=500),
+                conn=Depends(get_conn), who=Depends(caller)):
+    """Suite des builds publiees, du plus recent au plus ancien."""
+    if not conn.execute("SELECT 1 FROM apps WHERE appid = ?", (appid,)).fetchone():
+        raise HTTPException(status_code=404, detail="app non suivie")
+    rows = conn.execute(
+        """SELECT change_number, buildid, occurred_at, title FROM changes
+           WHERE appid = ? AND (buildid IS NOT NULL OR kind = 'build')
+           ORDER BY occurred_at DESC LIMIT ?""",
+        (appid, limit),
+    ).fetchall()
+    return {"appid": appid, "patches": [dict(r) for r in rows]}
+
+
 @app.get("/v1/search", tags=["apps"])
 def search(q: str = Query(..., min_length=2, description="nom ou appid"),
            conn=Depends(get_conn), who=Depends(caller)):

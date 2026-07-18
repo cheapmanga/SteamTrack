@@ -456,3 +456,18 @@ footer {
 .refresh:hover { color: #fff; border-color: var(--accent); }
 .refresh:disabled { opacity: 0.45; cursor: default; }
 .auto .fresh { color: var(--link); }
+
+/* ----- Captures d'ecran ----- */
+.shots {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 8px;
+}
+.shot { position: relative; display: block; border-radius: 3px; overflow: hidden; }
+.shot img { display: block; width: 100%; height: auto; background: var(--panel); }
+.shot:hover { outline: 2px solid var(--accent); }
+.shot-tag {
+    position: absolute; top: 6px; left: 6px;
+    background: rgba(0, 0, 0, 0.7); color: #fff;
+    font-size: 10px; letter-spacing: 0.06em; padding: 2px 6px; border-radius: 2px;
+}
