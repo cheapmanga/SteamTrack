@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>steamtrack</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <div class="bar">
+    <a href="index.html" class="logo">steam<span>track</span></a>
+    <nav>
+      <a href="index.html" class="active">Apps</a>
+      <a href="changes.html">Changes</a>
+      <a href="/docs">API</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <h1>Tracked apps</h1>
+  <p class="sub" id="sub">Loading...</p>
+
+  <div id="content">
+    <p class="empty">Loading tracked apps...</p>
+  </div>
+</main>
+
+<footer>
+  steamtrack — Steam change history via the anonymous PICS feed.
+  History for each app starts the day it was added.
+</footer>
+
+<script src="steamtrack.js"></script>
+<script>
+(async function () {
+    const content = document.getElementById("content");
+    const sub = document.getElementById("sub");
+
+    try {
+        const [{ apps }, health] = await Promise.all([
+            api("/v1/apps"),
+            api("/health"),
+        ]);
+
+        sub.textContent = `${apps.length} app${apps.length > 1 ? "s" : ""} tracked, `
+            + `${health.changes} changes recorded`;
+
+        if (!apps.length) {
+            content.replaceChildren(el("p", "empty",
+                "No app tracked yet. Add one with: steamtrack add 730"));
+            return;
+        }
+
+        const table = el("table");
+        const thead = el("thead");
+        const hrow = el("tr");
+        ["App", "AppID", "Changes", "Last change", "Tracking since"].forEach((h, i) => {
+            const th = el("th", i > 2 ? "hide-sm" : "", h);
+            hrow.append(th);
+        });
+        thead.append(hrow);
+        table.append(thead);
+
+        const tbody = el("tbody");
+        apps.forEach(app => {
+            const row = el("tr");
+
+            const cell = el("td");
+            const link = el("a", "app-cell");
+            link.href = `app.html?appid=${app.appid}`;
+            const img = el("img");
+            img.src = app.header_image;
+            img.alt = "";
+            img.loading = "lazy";
+            // Une image manquante ne doit pas laisser une icone cassee.
+            img.addEventListener("error", () => { img.style.visibility = "hidden"; });
+            link.append(img, el("span", "app-name", app.name || `App ${app.appid}`));
+            cell.append(link);
+            if (!app.depots_public) {
+                const flag = el("span", "tag", "NO DEPOTS");
+                flag.title = "This app requires a token: builds are detected without their buildid";
+                flag.style.marginLeft = "8px";
+                cell.append(flag);
+            }
+            row.append(cell);
+
+            row.append(el("td", "num", String(app.appid)));
+            row.append(el("td", "num", String(app.changes)));
+
+            const last = el("td", "hide-sm", ago(app.last_change_at));
+            last.title = stamp(app.last_change_at);
+            row.append(last);
+
+            const since = el("td", "hide-sm", ago(app.added_at));
+            since.title = stamp(app.added_at);
+            row.append(since);
+
+            tbody.append(row);
+        });
+        table.append(tbody);
+        const wrap = el("div", "table-wrap");
+        wrap.append(table);
+        content.replaceChildren(wrap);
+    } catch (err) {
+        sub.textContent = "";
+        content.replaceChildren(el("p", "empty err", "Could not reach the API: " + err.message));
+    }
+})();
+</script>
+</body>
+</html>

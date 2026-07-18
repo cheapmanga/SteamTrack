@@ -196,6 +196,19 @@ def _print_tree(nodes, indent):
         _print_tree(node.get("children"), indent + 2)
 
 
+def cmd_reclean(conn, args):
+    from . import news
+
+    appid = None
+    if args.game:
+        appid, _ = pick(args.game)
+        if appid is None:
+            return 1
+    fixed = news.reclean(conn, appid)
+    print(f"{fixed} annonce(s) renettoyee(s)")
+    return 0
+
+
 def cmd_key(conn, args):
     if args.key_action == "add":
         key = "st_" + secrets.token_urlsafe(24)
@@ -253,6 +266,10 @@ def main():
     p.add_argument("--limit", type=int, default=10)
     p.add_argument("--kind")
     p.set_defaults(func=cmd_show)
+
+    p = sub.add_parser("reclean", help="repasser le nettoyage BBCode sur les annonces")
+    p.add_argument("game", nargs="?")
+    p.set_defaults(func=cmd_reclean)
 
     p = sub.add_parser("key", help="gerer les cles d'API")
     p.add_argument("key_action", choices=["add", "list", "revoke"])

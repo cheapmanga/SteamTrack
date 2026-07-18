@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>App history — steamtrack</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <div class="bar">
+    <a href="index.html" class="logo">steam<span>track</span></a>
+    <nav>
+      <a href="index.html">Apps</a>
+      <a href="changes.html">Changes</a>
+      <a href="/docs">API</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div id="head"></div>
+  <div id="notice"></div>
+
+  <div class="toolbar">
+    <div class="filters" id="filters"></div>
+    <input type="search" class="search" id="search" placeholder="Filter (buildid, tags, depot...)">
+  </div>
+
+  <div id="feed"><p class="empty">Loading history...</p></div>
+  <button class="loadmore" id="more" hidden>Show more</button>
+</main>
+
+<footer>
+  History starts the day this app was added — Steam does not keep past changelists.
+</footer>
+
+<script src="steamtrack.js"></script>
+<script>
+(async function () {
+    const PAGE = 40;
+    const appid = new URLSearchParams(location.search).get("appid");
+    const headEl = document.getElementById("head");
+    const noticeEl = document.getElementById("notice");
+    const feedEl = document.getElementById("feed");
+    const filtersEl = document.getElementById("filters");
+    const searchEl = document.getElementById("search");
+    const moreBtn = document.getElementById("more");
+
+    if (!appid) { location.replace("index.html"); return; }
+
+    let all = [];
+    let shown = 0;
+    let kind = "all";
+
+    bindMedia(feedEl);
+
+    function header(app) {
+        const wrap = el("div", "apphead");
+        const img = el("img");
+        img.src = app.header_image;
+        img.alt = "";
+        img.addEventListener("error", () => { img.style.visibility = "hidden"; });
+
+        const body = el("div", "apphead-body");
+        const title = el("h1", "", app.name || `App ${app.appid}`);
+        title.append(el("span", "appid", String(app.appid)));
+        body.append(title);
+
+        const facts = el("div", "facts");
+        const add = (label, value, mono) => {
+            const box = el("div");
+            box.append(el("span", "fact-label", label));
+            box.append(el("span", "fact-value" + (mono ? " mono" : ""), value));
+            facts.append(box);
+        };
+        add("Changes", String(app.changes));
+        add("Builds", String(app.builds));
+        add("Latest build", app.latest_buildid || "-", true);
+        add("Last change", ago(app.last_change_at));
+        add("Tracking since", ago(app.tracking_since));
+        body.append(facts);
+
+        wrap.append(img, body);
+        return wrap;
+    }
+
+    function renderFilters() {
+        const counts = {};
+        all.forEach(e => (e.types || [e.kind]).forEach(t => {
+            counts[t] = (counts[t] || 0) + 1;
+        }));
+
+        const make = (key, label, n) => {
+            const btn = el("button", "filter" + (key === kind ? " on" : ""));
+            btn.append(el("span", "", label));
+            btn.append(el("span", "n", String(n)));
+            btn.addEventListener("click", () => { kind = key; renderFilters(); render(); });
+            return btn;
+        };
+
+        const buttons = [make("all", "All", all.length)];
+        Object.entries(KINDS).forEach(([key, label]) => {
+            if (counts[key]) buttons.push(make(key, label, counts[key]));
+        });
+        filtersEl.replaceChildren(...buttons);
+    }
+
+    function matching() {
+        const q = searchEl.value.trim().toLowerCase();
+        return all.filter(e => {
+            if (kind !== "all" && !(e.types || [e.kind]).includes(kind)) return false;
+            if (!q) return true;
+            if (!e._hay) {
+                // Index de recherche calcule une fois par evenement.
+                const flat = nodes => (nodes || []).map(n =>
+                    (n.seg || []).map(s => s.v).join("") + " " + flat(n.children)).join(" ");
+                e._hay = [e.title, e.change_number, e.buildid,
+                          e.source === "news" ? (e.changes || {}).body : flat(e.changes)]
+                    .join(" ").toLowerCase();
+            }
+            return e._hay.includes(q);
+        });
+    }
+
+    function render(append) {
+        const list = matching();
+        if (!append) { shown = 0; feedEl.replaceChildren(); }
+
+        if (!list.length) {
+            feedEl.replaceChildren(el("p", "empty", "No matching changes."));
+            moreBtn.hidden = true;
+            return;
+        }
+
+        const slice = list.slice(shown, shown + PAGE);
+        const frag = document.createDocumentFragment();
+        slice.forEach(e => frag.append(panel(e)));
+        feedEl.append(frag);
+        shown += slice.length;
+
+        moreBtn.hidden = shown >= list.length;
+        moreBtn.textContent = `Show more (${list.length - shown} remaining)`;
+    }
+
+    let timer = null;
+    searchEl.addEventListener("input", () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => render(), 150);
+    });
+    moreBtn.addEventListener("click", () => render(true));
+
+    try {
+        const app = await api(`/v1/apps/${appid}`);
+        document.title = `${app.name || appid} — steamtrack`;
+        headEl.replaceChildren(header(app));
+
+        if (!app.depots_public) {
+            noticeEl.append(el("div", "notice",
+                "This app requires a Steam token: its depots are not public. "
+                + "Builds are detected through the changenumber, without their buildid."));
+        }
+
+        // On charge large une fois, puis on filtre cote navigateur : plus
+        // reactif qu'un aller-retour a chaque clic sur un filtre.
+        const data = await api(`/v1/apps/${appid}/changes?limit=500`);
+        all = data.changes || [];
+        renderFilters();
+        render();
+    } catch (err) {
+        feedEl.replaceChildren(el("p", "empty err", "Could not load: " + err.message));
+    }
+})();
+</script>
+</body>
+</html>

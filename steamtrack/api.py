@@ -11,13 +11,15 @@ les cles sans quota sont illimitees.
 
 import json
 import sqlite3
+from pathlib import Path
 from datetime import datetime, timezone
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
-from . import auth, db
+from . import auth, db, diff
 
 app = FastAPI(
     title="steamtrack",
@@ -37,6 +39,24 @@ app.add_middleware(
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+
+def header_image(conn, appid):
+    """URL de la banniere du jeu.
+
+    On la tire du snapshot plutot que de deviner l'URL du CDN : les jeux non
+    encore sortis n'ont pas d'image a l'emplacement standard, mais leur appinfo
+    en publie une.
+    """
+    snapshot = db.get_snapshot(conn, appid)
+    if snapshot:
+        images = (snapshot.get("common") or {}).get("header_image") or {}
+        value = images.get("english") or next(iter(images.values()), None)
+        if value:
+            url, _ = diff.asset_url(appid, value)
+            if url:
+                return url
+    return f"https://cdn.cloudflare.steamstatic.com/steam/apps/{appid}/header.jpg"
 
 
 def get_conn():
@@ -95,12 +115,11 @@ async def rate_headers(request: Request, call_next):
 
 # --- lecture -------------------------------------------------------------
 
-@app.get("/", tags=["service"])
+@app.get("/api", tags=["service"])
 def index(conn=Depends(get_conn)):
-    """Point d'entree : ce que le service expose, sans avoir a lire la doc.
+    """Point d'entree de l'API : ce que le service expose.
 
-    Sans cette route, la racine renvoie 404 -- c'est pourtant la premiere URL
-    qu'on essaie en decouvrant un service.
+    La racine sert l'interface web ; cette description vit donc sur /api.
     """
     apps = conn.execute("SELECT COUNT(*) n FROM apps").fetchone()["n"]
     changes = conn.execute("SELECT COUNT(*) n FROM changes").fetchone()["n"]
@@ -158,6 +177,7 @@ def list_apps(conn=Depends(get_conn), who=Depends(caller)):
             "changes": r["changes"],
             "last_change_at": r["last_change_at"],
             "last_change_number": r["last_change"],
+            "header_image": header_image(conn, r["appid"]),
             # Signale au consommateur que les builds de cet app arriveront sans
             # buildid : ce n'est pas une anomalie de notre cote.
             "depots_public": not bool(r["missing_token"]),
@@ -192,6 +212,7 @@ def get_app(appid: int, conn=Depends(get_conn), who=Depends(caller)):
         "latest_buildid": build["buildid"] if build else None,
         "latest_build_at": build["occurred_at"] if build else None,
         "depots_public": not bool(row["missing_token"]),
+        "header_image": header_image(conn, appid),
     }
 
 
@@ -267,3 +288,11 @@ def delete_app(appid: int, conn=Depends(get_conn), who=Depends(admin)):
         raise HTTPException(status_code=404, detail="app non suivie")
     return {"appid": appid, "removed": True,
             "name": removed["name"], "changes_deleted": removed["changes"]}
+
+
+# L'interface web est servie a la racine. Ce montage doit rester en DERNIER :
+# monte sur "/", il capture toute route enregistree apres lui, ce qui rendrait
+# l'API inaccessible.
+WEB = Path(__file__).resolve().parent.parent / "web"
+if WEB.is_dir():
+    app.mount("/", StaticFiles(directory=WEB, html=True), name="web")

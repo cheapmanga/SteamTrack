@@ -27,8 +27,28 @@ def clean_bbcode(text):
     text = re.sub(r"\[img\][^\[]*\[/img\]", "", text, flags=re.I)
     text = re.sub(r"\[url=([^\]]+)\](.*?)\[/url\]", r"\2 (\1)", text,
                   flags=re.I | re.DOTALL)
+
+    # Les puces de liste s'ecrivent [*] : elles ne commencent pas par une
+    # lettre et survivaient donc au nettoyage generique ci-dessous, laissant
+    # des "[*]" en clair au milieu des patch notes.
+    text = re.sub(r"\[/?list[^\]]*\]", "\n", text, flags=re.I)
+    # La fermante [/*] doit partir AVANT l'ouvrante, sinon le "/" reste. Ni
+    # l'une ni l'autre ne commencent par une lettre, donc le nettoyage
+    # generique plus bas ne les voit pas.
+    text = re.sub(r"\[/\*\]", "", text)
+    text = re.sub(r"\[\*\]\s*", "\n- ", text)
+
+    # Les titres et separateurs meritent un saut de ligne, sinon tout le patch
+    # note se retrouve sur un seul paragraphe illisible.
+    text = re.sub(r"\[/?h[1-6]\]", "\n", text, flags=re.I)
+    text = re.sub(r"\[hr\]\[/hr\]|\[hr\]", "\n", text, flags=re.I)
+
     text = re.sub(r"\[/?[a-z][^\]]*\]", "", text, flags=re.I)
+    # Steam echappe parfois les crochets litteraux : "\[ MAPS ]".
+    text = text.replace("\\[", "[").replace("\\]", "]")
     text = html_mod.unescape(text)
+
+    text = re.sub(r"[ \t]+\n", "\n", text)
     return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
@@ -43,6 +63,32 @@ def fetch(appid, count=200, attempts=3):
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
             log.warning("news %s tentative %d/%d : %s", appid, attempt, attempts, exc)
     return []
+
+
+def reclean(conn, appid=None):
+    """Repasse le nettoyage BBCode sur les annonces deja enregistrees.
+
+    Le corps est fige a l'import : ameliorer clean_bbcode ne corrige pas
+    l'existant, et re-importer ne suffit pas non plus puisque la
+    deduplication ecarte les annonces connues.
+    """
+    sql = "SELECT id, payload FROM changes WHERE source = 'news'"
+    args = []
+    if appid:
+        sql += " AND appid = ?"
+        args.append(appid)
+
+    fixed = 0
+    for row in conn.execute(sql, args).fetchall():
+        payload = json.loads(row["payload"])
+        raw = payload.get("raw") or payload.get("body") or ""
+        cleaned = clean_bbcode(raw)
+        if cleaned != payload.get("body"):
+            payload["body"] = cleaned
+            conn.execute("UPDATE changes SET payload = ? WHERE id = ?",
+                         (json.dumps(payload, ensure_ascii=False), row["id"]))
+            fixed += 1
+    return fixed
 
 
 def backfill(conn, appid, count=200):
