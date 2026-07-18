@@ -11,9 +11,13 @@ heure et par cle, plutot qu'un journal de requetes qui grossirait sans fin.
 
 from datetime import datetime, timedelta, timezone
 
-# Sans cle, on autorise assez pour tester l'API mais pas pour s'en servir en
-# production : c'est ce qui pousse a demander une cle plutot qu'a scraper.
-ANON_QUOTA = 60
+# Sans cle, on autorise assez pour naviguer et essayer l'API, mais pas pour
+# s'en servir en production : c'est ce qui pousse a demander une cle.
+#
+# Le quota doit rester large : l'interface web tape la meme API sans cle, et
+# une seule page consomme cinq requetes. A 60/heure, le site devenait
+# inutilisable au bout d'une douzaine de visites.
+ANON_QUOTA = 1200
 ANON_KEY = "anon"
 
 

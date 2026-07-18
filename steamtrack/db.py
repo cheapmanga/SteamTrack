@@ -24,7 +24,13 @@ def connect(path=None):
     path = Path(path or os.environ.get("STEAMTRACK_DB", DEFAULT_DB))
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    conn = sqlite3.connect(path, timeout=30, isolation_level=None)
+    # check_same_thread=False : FastAPI execute les endpoints synchrones dans un
+    # pool de threads, et libere la connexion depuis un thread different de
+    # celui qui l'a ouverte -- ce que sqlite3 refuse par defaut, provoquant des
+    # 500 intermittents. Sans danger ici : chaque requete a sa propre connexion,
+    # aucune n'est partagee entre threads.
+    conn = sqlite3.connect(path, timeout=30, isolation_level=None,
+                           check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA.read_text(encoding="utf-8"))
     migrate(conn)
