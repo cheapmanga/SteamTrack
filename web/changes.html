@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Recent changes — steamtrack</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <div class="bar">
+    <a href="index.html" class="logo">steam<span>track</span></a>
+    <nav>
+      <a href="index.html">Apps</a>
+      <a href="changes.html" class="active">Changes</a>
+      <a href="/docs">API</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <h1>Recent changes</h1>
+  <p class="sub" id="sub">Across all tracked apps.</p>
+
+  <div class="toolbar">
+    <div class="filters" id="filters"></div>
+    <input type="search" class="search" id="search" placeholder="Filter...">
+  </div>
+
+  <div id="feed"><p class="empty">Loading...</p></div>
+  <button class="loadmore" id="more" hidden>Show more</button>
+</main>
+
+<footer>steamtrack — Steam change history via the anonymous PICS feed.</footer>
+
+<script src="steamtrack.js"></script>
+<script>
+(async function () {
+    const PAGE = 40;
+    const feedEl = document.getElementById("feed");
+    const filtersEl = document.getElementById("filters");
+    const searchEl = document.getElementById("search");
+    const moreBtn = document.getElementById("more");
+    const sub = document.getElementById("sub");
+
+    let all = [], names = {}, shown = 0, kind = "all";
+    bindMedia(feedEl);
+
+    function renderFilters() {
+        const counts = {};
+        all.forEach(e => (e.types || [e.kind]).forEach(t => counts[t] = (counts[t] || 0) + 1));
+        const make = (key, label, n) => {
+            const btn = el("button", "filter" + (key === kind ? " on" : ""));
+            btn.append(el("span", "", label), el("span", "n", String(n)));
+            btn.addEventListener("click", () => { kind = key; renderFilters(); render(); });
+            return btn;
+        };
+        const buttons = [make("all", "All", all.length)];
+        Object.entries(KINDS).forEach(([k, label]) => {
+            if (counts[k]) buttons.push(make(k, label, counts[k]));
+        });
+        filtersEl.replaceChildren(...buttons);
+    }
+
+    function matching() {
+        const q = searchEl.value.trim().toLowerCase();
+        return all.filter(e => {
+            if (kind !== "all" && !(e.types || [e.kind]).includes(kind)) return false;
+            if (!q) return true;
+            const hay = (e.title + " " + (names[e.appid] || "") + " " + (e.change_number || "")).toLowerCase();
+            return hay.includes(q);
+        });
+    }
+
+    function render(append) {
+        const list = matching();
+        if (!append) { shown = 0; feedEl.replaceChildren(); }
+        if (!list.length) {
+            feedEl.replaceChildren(el("p", "empty", "No matching changes."));
+            moreBtn.hidden = true;
+            return;
+        }
+        const frag = document.createDocumentFragment();
+        list.slice(shown, shown + PAGE).forEach(e =>
+            frag.append(panel(e, { appName: names[e.appid] || `App ${e.appid}` })));
+        feedEl.append(frag);
+        shown += Math.min(PAGE, list.length - shown);
+        moreBtn.hidden = shown >= list.length;
+        moreBtn.textContent = `Show more (${list.length - shown} remaining)`;
+    }
+
+    let timer = null;
+    searchEl.addEventListener("input", () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => render(), 150);
+    });
+    moreBtn.addEventListener("click", () => render(true));
+
+    try {
+        const [{ apps }, data] = await Promise.all([
+            api("/v1/apps"),
+            api("/v1/changes?limit=300"),
+        ]);
+        apps.forEach(a => names[a.appid] = a.name);
+        all = data.changes || [];
+        sub.textContent = `${all.length} recent changes across ${apps.length} tracked apps.`;
+        renderFilters();
+        render();
+    } catch (err) {
+        feedEl.replaceChildren(el("p", "empty err", "Could not load: " + err.message));
+    }
+})();
+</script>
+</body>
+</html>

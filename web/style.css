@@ -1,0 +1,365 @@
+/* Theme steamtrack, calque sur celui de SteamDB : fond sombre, typographie
+   dense, panneaux a liseres, diffs colores. */
+
+:root {
+    --bg:         #16191d;
+    --bg-header:  #171a21;   /* le noir de la barre Steam */
+    --panel:      #21262c;
+    --panel-head: #262c33;
+    --border:     #32373d;
+    --text:       #dfe3e6;
+    --muted:      #8f98a0;
+    --dim:        #6b7379;
+    --link:       #67c1f5;   /* le bleu Steam */
+    --added:      #6ec06e;
+    --removed:    #d05a5a;
+    --modified:   #67c1f5;
+    --accent:     #4c9fd8;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.5 Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ----- Barre superieure ----- */
+header {
+    background: var(--bg-header);
+    border-bottom: 1px solid #000;
+    padding: 0 20px;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+}
+
+.bar {
+    max-width: 1180px;
+    margin: 0 auto;
+    height: 52px;
+    display: flex;
+    align-items: center;
+    gap: 24px;
+}
+
+.logo {
+    font-weight: 700;
+    font-size: 17px;
+    color: #fff;
+    letter-spacing: -0.02em;
+}
+
+.logo span { color: var(--link); }
+.logo:hover { text-decoration: none; }
+
+nav { display: flex; gap: 18px; margin-left: auto; font-size: 13px; }
+nav a { color: var(--muted); }
+nav a:hover, nav a.active { color: #fff; text-decoration: none; }
+
+/* ----- Structure ----- */
+main {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 22px 20px 60px;
+}
+
+h1 {
+    font-size: 22px;
+    font-weight: 600;
+    margin: 0 0 4px;
+    letter-spacing: -0.01em;
+}
+
+.sub { color: var(--muted); font-size: 13px; margin: 0 0 20px; }
+
+/* ----- Bandeau du jeu ----- */
+.apphead {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    margin-bottom: 20px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--border);
+}
+
+.apphead img {
+    width: 184px;
+    height: 86px;
+    object-fit: cover;
+    border-radius: 3px;
+    background: var(--panel);
+    flex-shrink: 0;
+}
+
+.apphead-body { min-width: 0; flex: 1; }
+.apphead h1 { margin-bottom: 6px; }
+
+.appid {
+    font: 12px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color: var(--dim);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 3px 7px;
+    margin-left: 8px;
+    vertical-align: middle;
+}
+
+.facts { display: flex; flex-wrap: wrap; gap: 22px; margin-top: 12px; }
+.fact-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--dim);
+    display: block;
+    margin-bottom: 2px;
+}
+.fact-value { font-size: 14px; font-weight: 500; }
+.fact-value.mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+
+/* ----- Tableau des jeux ----- */
+/* Le tableau defile dans son propre conteneur : sinon, sur petit ecran, c'est
+   la page entiere qui deborde horizontalement. */
+.table-wrap { overflow-x: auto; }
+
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+
+thead th {
+    text-align: left;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--dim);
+    font-weight: 600;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+tbody td { padding: 10px 12px; border-bottom: 1px solid #23282e; }
+tbody tr:hover { background: #1c2126; }
+
+/* La cellule doit rester sur une ligne : le badge "no depots" passait sous la
+   vignette et debordait de la rangee. */
+td:first-child { display: flex; align-items: center; gap: 8px; }
+.app-cell { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.app-cell img {
+    width: 76px; height: 36px; object-fit: cover;
+    border-radius: 2px; background: var(--panel); flex-shrink: 0;
+}
+.app-name { font-weight: 500; color: var(--text); }
+.app-cell a:hover .app-name { color: var(--link); }
+.num { font-family: ui-monospace, Menlo, Consolas, monospace; color: var(--muted); }
+
+/* ----- Filtres ----- */
+.toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.filters { display: flex; flex-wrap: wrap; gap: 4px; }
+
+.filter {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 3px;
+    padding: 5px 11px;
+    font-size: 12.5px;
+    font-family: inherit;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.filter:hover { color: var(--text); border-color: #444a52; }
+.filter.on { background: #2c3a47; border-color: var(--accent); color: #fff; }
+.filter .n { color: var(--dim); font-size: 11px; }
+.filter.on .n { color: #b9d7ea; }
+
+.search {
+    margin-left: auto;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 5px 10px;
+    color: var(--text);
+    font: inherit;
+    font-size: 12.5px;
+    width: 240px;
+}
+.search:focus { outline: none; border-color: var(--accent); }
+
+/* ----- Panneaux d'historique ----- */
+.panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    margin-bottom: 8px;
+    overflow: hidden;
+}
+
+.panel-head {
+    background: var(--panel-head);
+    border-bottom: 1px solid var(--border);
+    padding: 7px 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12.5px;
+}
+
+.panel-title { font-weight: 500; }
+.panel-time { margin-left: auto; color: var(--dim); font-size: 12px; white-space: nowrap; }
+.panel-body { padding: 9px 12px; }
+
+.tag {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 2px;
+    background: #333a42;
+    color: var(--muted);
+}
+.tag.build   { background: #3a2f22; color: #e0a458; }
+.tag.news    { background: #2b3a2b; color: #8ec07c; }
+.tag.depot,
+.tag.branch  { background: #24333f; color: #6aa5db; }
+.tag.assets  { background: #33283c; color: #b98cd0; }
+
+.changenum {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 11.5px;
+    color: var(--dim);
+}
+
+/* ----- Arbre de differences ----- */
+ul.diff { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+ul.diff ul.diff { margin: 2px 0 2px 16px; padding-left: 10px; border-left: 1px solid #2d3238; }
+ul.diff li { padding: 1px 0; line-height: 1.55; }
+
+li.added    > .line::before { content: "+"; color: var(--added);    font-weight: 700; margin-right: 6px; }
+li.removed  > .line::before { content: "\2212"; color: var(--removed); font-weight: 700; margin-right: 6px; }
+li.modified > .line::before { content: "~"; color: var(--modified); font-weight: 700; margin-right: 6px; }
+li.none     > .line::before { content: ""; }
+
+.line { word-break: break-word; }
+
+.s-field { color: #fff; font-weight: 500; }
+.s-text  { color: var(--muted); }
+.s-muted { color: var(--dim); font-size: 0.92em; }
+
+.s-del, .s-ins {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 12.5px;
+    padding: 0 4px;
+    border-radius: 2px;
+}
+.s-del { color: #e79191; background: rgba(208, 90, 90, 0.14); text-decoration: line-through; }
+.s-ins { color: #9adf9a; background: rgba(110, 192, 110, 0.14); }
+
+/* ----- Assets ----- */
+a.media { border-bottom: 1px dotted currentColor; cursor: pointer; }
+a.media::after { content: " \1F5BC"; font-size: 0.85em; opacity: 0.6; }
+a.media.video::after { content: " \1F3AC"; }
+a.media:hover { filter: brightness(1.25); }
+a.media.busy { opacity: 0.5; pointer-events: none; }
+
+.preview {
+    position: fixed;
+    z-index: 900;
+    background: #0e1114;
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    padding: 6px;
+    box-shadow: 0 10px 34px rgba(0, 0, 0, 0.75);
+    pointer-events: none;
+    max-width: min(440px, 92vw);
+}
+.preview img, .preview video { display: block; max-width: 428px; max-height: 290px; border-radius: 2px; }
+.preview .cap { display: block; text-align: center; font-size: 11px; color: var(--dim); margin-top: 5px; }
+.preview.err { border-color: var(--removed); }
+@media (hover: none) { .preview { display: none; } }
+
+/* ----- Corps des annonces ----- */
+.news-body {
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.65;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;   /* les URLs de patch notes sont tres longues */
+    margin-top: 2px;
+}
+.news-body.clip { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* "Read more" et "Open on Steam" se suivent : sans cette rangee, les deux
+   libelles se collaient l'un a l'autre. */
+.news-actions { display: flex; gap: 14px; align-items: baseline; margin-top: 4px; }
+
+.more {
+    background: none;
+    border: none;
+    color: var(--link);
+    font: inherit;
+    font-size: 12.5px;
+    padding: 0;
+    cursor: pointer;
+}
+.more:hover { text-decoration: underline; }
+
+/* ----- Divers ----- */
+.empty { text-align: center; color: var(--dim); padding: 44px 20px; }
+.err { color: var(--removed); }
+
+.loadmore {
+    display: block;
+    width: 100%;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 3px;
+    padding: 9px;
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    margin-top: 10px;
+}
+.loadmore:hover { color: #fff; border-color: #444a52; }
+
+.notice {
+    background: #2a2419;
+    border: 1px solid #4a3d22;
+    border-radius: 3px;
+    padding: 9px 12px;
+    font-size: 12.5px;
+    color: #d9c08a;
+    margin-bottom: 16px;
+}
+
+footer {
+    border-top: 1px solid var(--border);
+    margin-top: 40px;
+    padding: 18px 20px;
+    color: var(--dim);
+    font-size: 12px;
+    text-align: center;
+}
+
+@media (max-width: 680px) {
+    .apphead { flex-direction: column; }
+    .apphead img { width: 100%; height: auto; }
+    .search { margin-left: 0; width: 100%; }
+    .hide-sm { display: none; }
+}

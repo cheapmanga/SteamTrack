@@ -107,6 +107,24 @@ le processus. `POST /v1/apps` enregistre donc l'intention et repond
 immediatement, puis le collecteur -- seul autorise a parler a Steam -- recupere
 l'etat initial a son passage suivant.
 
+## Interface web
+
+Servie a la racine par le meme processus que l'API :
+
+| Page | Contenu |
+|---|---|
+| `/` | jeux suivis, vignettes, volume et date du dernier changement |
+| `/app.html?appid=730` | historique d'un jeu : filtres par categorie, recherche, diffs |
+| `/changes.html` | flux recent, tous jeux confondus |
+
+Apparence calquee sur SteamDB : fond sombre, typographie dense, panneaux a
+liseres, differences colorees. Les assets se previsualisent au survol et se
+telechargent au clic.
+
+L'API vit sous `/v1`, `/health`, `/api` et `/docs` ; le reste est servi par
+l'interface. Le montage statique est enregistre en DERNIER dans `api.py` :
+monte sur `/`, il capturerait sinon toutes les routes declarees apres lui.
+
 ## Deploiement
 
 Voir `deploy/steamtrack.service` pour une unite systemd. La base vit dans
@@ -135,4 +153,4 @@ l'API. Les assets y portent leur URL, ce qui permet apercu et telechargement.
 - [x] CLI : ajouter / retirer / lister / consulter
 - [x] Cles d'API en base
 - [x] API HTTP (cles, quotas, OpenAPI)
-- [ ] Interface web
+- [x] Interface web
