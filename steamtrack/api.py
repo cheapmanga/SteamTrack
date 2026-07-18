@@ -232,7 +232,13 @@ def app_changes(
     if not conn.execute("SELECT 1 FROM apps WHERE appid = ?", (appid,)).fetchone():
         raise HTTPException(status_code=404, detail="app non suivie")
     events = db.changes_for(conn, appid, limit=limit, offset=offset, kind=kind, since=since)
-    return {"appid": appid, "count": len(events), "changes": events}
+    total = conn.execute(
+        "SELECT COUNT(*) n FROM changes WHERE appid = ?", (appid,)
+    ).fetchone()["n"]
+    # total accompagne toujours count : sinon un client recevant exactement
+    # `limit` entrees ne peut pas distinguer "c'est tout" de "il en reste".
+    return {"appid": appid, "count": len(events), "total": total,
+            "offset": offset, "changes": events}
 
 
 @app.get("/v1/apps/{appid}/builds", tags=["changes"])

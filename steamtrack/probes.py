@@ -108,13 +108,7 @@ def sample_details(conn, appid, cc=DEFAULT_CC):
              "full": s.get("path_full")}
             for s in (data.get("screenshots") or [])
         ][:40],
-        "movies": [
-            {"id": m.get("id"), "name": m.get("name"),
-             "thumb": m.get("thumbnail"),
-             "webm": (m.get("webm") or {}).get("max"),
-             "mp4": (m.get("mp4") or {}).get("max")}
-            for m in (data.get("movies") or [])
-        ][:20],
+        "movies": [_movie(m) for m in (data.get("movies") or [])][:20],
         "packages": [
             {
                 "title": g.get("title"),
@@ -141,6 +135,29 @@ def sample_details(conn, appid, cc=DEFAULT_CC):
     if price:
         record_price(conn, appid, price)
     return slim
+
+
+# Steam ne publie plus d'URL mp4/webm dans appdetails : les champs actuels
+# (hls_h264, dash_h264, dash_av1) sont du streaming adaptatif, qu'un <video>
+# ne sait pas lire sans bibliotheque dediee. Les fichiers directs existent
+# pourtant toujours a l'ancienne convention, verifiee sur plusieurs jeux --
+# on reconstruit donc l'URL a partir de l'identifiant du film.
+TRAILER_ROOT = "https://video.akamai.steamstatic.com/store_trailers/"
+
+
+def _movie(m):
+    mid = m.get("id")
+    base = f"{TRAILER_ROOT}{mid}/" if mid else None
+    return {
+        "id": mid,
+        "name": m.get("name"),
+        "thumb": m.get("thumbnail"),
+        "mp4": f"{base}movie_max.mp4" if base else None,
+        "mp4_480": f"{base}movie480.mp4" if base else None,
+        "webm": f"{base}movie480_vp9.webm" if base else None,
+        # Conserve tel quel : utile a qui sait lire du HLS.
+        "hls": (m.get("hls_h264") or {}).get("max") if isinstance(m.get("hls_h264"), dict) else m.get("hls_h264"),
+    }
 
 
 def record_price(conn, appid, price):
