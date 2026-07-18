@@ -127,7 +127,9 @@ h1 {
 /* ----- Tableau des jeux ----- */
 /* Le tableau defile dans son propre conteneur : sinon, sur petit ecran, c'est
    la page entiere qui deborde horizontalement. */
-.table-wrap { overflow-x: auto; }
+/* width + max-width sont necessaires : sans eux le conteneur s'etire a la
+   largeur du tableau au lieu de le faire defiler, et c'est la page qui deborde. */
+.table-wrap { overflow-x: auto; width: 100%; max-width: 100%; }
 
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
 
@@ -370,7 +372,13 @@ footer {
     gap: 2px;
     border-bottom: 1px solid var(--border);
     margin-bottom: 18px;
+    /* Cinq onglets ne tiennent pas sur un telephone : ils defilent
+       horizontalement plutot que d'elargir la page entiere. */
+    overflow-x: auto;
+    scrollbar-width: none;
 }
+.tabs::-webkit-scrollbar { display: none; }
+.tab { flex: 0 0 auto; white-space: nowrap; }
 
 .tab {
     background: none;
@@ -407,6 +415,9 @@ footer {
 
 /* ----- Tableaux secondaires ----- */
 .mini { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+/* Manifests et tailles ne se compriment pas : sur petit ecran le tableau
+   defile dans son conteneur plutot que d'elargir la page. */
+.mini td, .mini th { white-space: nowrap; }
 .mini th {
     text-align: left; padding: 7px 10px; color: var(--dim);
     font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
