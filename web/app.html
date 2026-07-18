@@ -45,7 +45,8 @@
     const footEl = document.getElementById("foot");
 
     let app = null, changes = [], depots = null, players = null, info = null;
-    let tab = location.hash.replace("#", "") || "history";
+    let sections = null, related = null, patches = null;
+    let tab = location.hash.replace("#", "") || "info";
     let kind = "all", shown = 0, query = "";
 
     bindMedia(viewEl);
@@ -91,12 +92,25 @@
 
     // ----- Onglets -----
     function renderTabs() {
+        const shots = (info && info.screenshots) ? info.screenshots.length : 0;
+        const packs = (info && info.packages)
+            ? info.packages.reduce((n, g) => n + (g.subs || []).length, 0) : 0;
         const defs = [
-            ["history", "History", changes.length],
+            ["info", "Store info", null],
+            ["charts", "Charts", players && players.series ? players.series.length : 0],
+            ["patches", "Patches", patches ? patches.length : 0],
+            ["metadata", "Metadata", sections && sections.common
+                ? Object.keys(sections.common).length : 0],
+            ["packages", "Packages", packs],
             ["depots", "Depots", depots ? depots.depots.length : 0],
             ["branches", "Branches", depots ? depots.branches.length : 0],
-            ["charts", "Charts", players && players.series ? players.series.length : 0],
-            ["info", "Info", null],
+            ["config", "Configuration", sections && sections.config
+                ? Object.keys(sections.config).length : 0],
+            ["cloud", "Cloud saves", sections && sections.ufs
+                ? Object.keys(sections.ufs).length : 0],
+            ["shots", "Screenshots", shots],
+            ["related", "Related apps", related ? related.dlc.length : 0],
+            ["history", "Update history", changes.length],
         ];
         tabsEl.replaceChildren(...defs.map(([key, label, n]) => {
             const btn = el("button", "tab" + (key === tab ? " on" : ""));
@@ -114,11 +128,194 @@
 
     // ----- Vues -----
     function renderView() {
-        if (tab === "history") return renderHistory();
-        if (tab === "depots") return renderDepots();
-        if (tab === "branches") return renderBranches();
-        if (tab === "charts") return renderCharts();
-        return renderInfo();
+        const views = {
+            history: renderHistory, depots: renderDepots, branches: renderBranches,
+            charts: renderCharts, info: renderInfo, metadata: renderMetadata,
+            config: renderConfig, cloud: renderCloud, shots: renderShots,
+            related: renderRelated, packages: renderPackages, patches: renderPatches,
+        };
+        return (views[tab] || renderInfo)();
+    }
+
+    // Rend n'importe quelle section de l'appinfo en tableau cle/valeur.
+    // C'est la matiere de Metadata, Configuration et Cloud saves : trois
+    // onglets de SteamDB qui ne sont que trois sections du meme appinfo.
+    function sectionTable(obj, empty) {
+        if (!obj || !Object.keys(obj).length) {
+            viewEl.replaceChildren(el("p", "empty", empty));
+            return;
+        }
+        const table = el("table", "mini");
+        const body = el("tbody");
+        const walk = (o, prefix) => {
+            Object.entries(o).sort((a, b) => a[0].localeCompare(b[0])).forEach(([k, v]) => {
+                const key = prefix ? `${prefix}/${k}` : k;
+                if (v && typeof v === "object" && !Array.isArray(v)) {
+                    if (Object.keys(v).length <= 12) return walk(v, key);
+                    return;
+                }
+                const tr = el("tr");
+                tr.append(el("th", "", key));
+                const td = el("td", "mono");
+                const text = Array.isArray(v) ? v.join(", ") : String(v);
+                // Les valeurs "1"/"0" de PICS sont des booleens deguises.
+                td.textContent = text.length > 300 ? text.slice(0, 300) + "..." : text;
+                tr.append(td);
+                body.append(tr);
+            });
+        };
+        walk(obj, "");
+        table.append(body);
+        const wrap = el("div", "table-wrap");
+        wrap.append(table);
+        viewEl.replaceChildren(wrap);
+    }
+
+    function renderMetadata() {
+        sectionTable(sections && sections.common, "No metadata recorded yet.");
+    }
+
+    function renderConfig() {
+        sectionTable(sections && sections.config,
+            "No configuration published for this app.");
+    }
+
+    function renderCloud() {
+        const ufs = sections && sections.ufs;
+        if (!ufs || !Object.keys(ufs).length) {
+            viewEl.replaceChildren(el("p", "empty", "This app does not use Steam Cloud."));
+            return;
+        }
+        sectionTable(ufs, "");
+    }
+
+    function renderPatches() {
+        if (!patches || !patches.length) {
+            viewEl.replaceChildren(el("p", "empty", "No build recorded yet."));
+            return;
+        }
+        const table = el("table", "mini");
+        const head = el("tr");
+        ["Build ID", "Changelist", "Date", "Title"].forEach(h => head.append(el("th", "", h)));
+        const thead = el("thead");
+        thead.append(head);
+        table.append(thead);
+        const body = el("tbody");
+        patches.forEach(p => {
+            const tr = el("tr");
+            tr.append(el("td", "mono", p.buildid || "-"));
+            tr.append(el("td", "mono", p.change_number ? "#" + p.change_number : "-"));
+            const d = el("td", "", ago(p.occurred_at));
+            d.title = stamp(p.occurred_at);
+            tr.append(d);
+            tr.append(el("td", "", p.title));
+            body.append(tr);
+        });
+        table.append(body);
+        const wrap = el("div", "table-wrap");
+        wrap.append(table);
+        viewEl.replaceChildren(wrap);
+    }
+
+    function renderPackages() {
+        const groups = (info && info.packages) || [];
+        if (!groups.length) {
+            viewEl.replaceChildren(el("p", "empty", "No package listed on the store."));
+            return;
+        }
+        const table = el("table", "mini");
+        const head = el("tr");
+        ["Package", "Name", "Price"].forEach(h => head.append(el("th", "", h)));
+        const thead = el("thead");
+        thead.append(head);
+        table.append(thead);
+        const body = el("tbody");
+        groups.forEach(g => (g.subs || []).forEach(sub => {
+            const tr = el("tr");
+            tr.append(el("td", "mono", String(sub.packageid || "-")));
+            tr.append(el("td", "", sub.text || "-"));
+            tr.append(el("td", "mono", sub.price != null
+                ? (sub.price / 100).toFixed(2) : "-"));
+            body.append(tr);
+        }));
+        table.append(body);
+        const wrap = el("div", "table-wrap");
+        wrap.append(table);
+        viewEl.replaceChildren(wrap);
+    }
+
+    function renderShots() {
+        const shots = (info && info.screenshots) || [];
+        const movies = (info && info.movies) || [];
+        if (!shots.length && !movies.length) {
+            viewEl.replaceChildren(el("p", "empty", "No screenshot published."));
+            return;
+        }
+        const grid = el("div", "shots");
+        movies.forEach(m => {
+            const a = el("a", "shot");
+            a.href = m.mp4 || m.webm || m.thumb;
+            a.target = "_blank";
+            a.rel = "noopener noreferrer";
+            const img = el("img");
+            img.src = m.thumb;
+            img.alt = m.name || "";
+            img.loading = "lazy";
+            a.append(img, el("span", "shot-tag", "VIDEO"));
+            grid.append(a);
+        });
+        shots.forEach(sc => {
+            const a = el("a", "shot");
+            a.href = sc.full;
+            a.target = "_blank";
+            a.rel = "noopener noreferrer";
+            const img = el("img");
+            img.src = sc.thumb;
+            img.alt = "";
+            img.loading = "lazy";
+            a.append(img);
+            grid.append(a);
+        });
+        viewEl.replaceChildren(grid);
+    }
+
+    function renderRelated() {
+        if (!related || !related.dlc.length) {
+            viewEl.replaceChildren(el("p", "empty",
+                related && related.parent
+                    ? `This app is content for app ${related.parent}.`
+                    : "No related app found."));
+            return;
+        }
+        const table = el("table", "mini");
+        const head = el("tr");
+        ["AppID", "Name", ""].forEach(h => head.append(el("th", "", h)));
+        const thead = el("thead");
+        thead.append(head);
+        table.append(thead);
+        const body = el("tbody");
+        related.dlc.forEach(d => {
+            const tr = el("tr");
+            tr.append(el("td", "mono", String(d.appid)));
+            const name = el("td");
+            if (d.tracked) {
+                const link = el("a", "", d.name || `App ${d.appid}`);
+                link.href = `app.html?appid=${d.appid}`;
+                name.append(link);
+            } else {
+                name.textContent = d.name || "(not tracked)";
+            }
+            tr.append(name);
+            const flag = el("td");
+            flag.append(el("span", "pill" + (d.tracked ? " public" : ""),
+                d.tracked ? "tracked" : "DLC"));
+            tr.append(flag);
+            body.append(tr);
+        });
+        table.append(body);
+        const wrap = el("div", "table-wrap");
+        wrap.append(table);
+        viewEl.replaceChildren(wrap);
     }
 
     function matching() {
@@ -317,12 +514,15 @@
 
     // ----- Chargement -----
     async function loadAll() {
-        const [a, c, d, p, i] = await Promise.all([
+        const [a, c, d, p, i, sec, rel, pat] = await Promise.all([
             api(`/v1/apps/${appid}`),
             api(`/v1/apps/${appid}/changes?limit=500`),
             api(`/v1/apps/${appid}/depots`).catch(() => null),
             api(`/v1/apps/${appid}/players`).catch(() => null),
             api(`/v1/apps/${appid}/info`).catch(() => null),
+            api(`/v1/apps/${appid}/sections`).catch(() => null),
+            api(`/v1/apps/${appid}/related`).catch(() => null),
+            api(`/v1/apps/${appid}/patches`).catch(() => null),
         ]);
         const before = changes.length ? new Set(changes.map(e => e.id)) : null;
         app = a;
@@ -330,6 +530,9 @@
         depots = d;
         players = p;
         info = i ? i.details : null;
+        sections = sec ? sec.sections : null;
+        related = rel;
+        patches = pat ? pat.patches : null;
         return before ? changes.filter(e => !before.has(e.id)).length : 0;
     }
 
