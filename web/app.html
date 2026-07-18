@@ -145,6 +145,11 @@
             viewEl.replaceChildren(el("p", "empty", empty));
             return;
         }
+        // Tous les assets de la section, pour que la visionneuse passe de l'un
+        // a l'autre au lieu de s'ouvrir sur une seule image.
+        const assets = collectAssets(appid, obj);
+        const indexOf = url => assets.findIndex(a => a.src === url);
+
         const table = el("table", "mini");
         const body = el("tbody");
         const walk = (o, prefix) => {
@@ -158,8 +163,24 @@
                 tr.append(el("th", "", key));
                 const td = el("td", "mono");
                 const text = Array.isArray(v) ? v.join(", ") : String(v);
-                // Les valeurs "1"/"0" de PICS sont des booleens deguises.
-                td.textContent = text.length > 300 ? text.slice(0, 300) + "..." : text;
+                const url = Array.isArray(v) ? null : assetUrlFor(appid, v, k);
+
+                if (url) {
+                    // PICS ne donne qu'une reference : on la rend cliquable et
+                    // survolable, sinon "8dbc7195..." reste illisible.
+                    const link = el("a", "media asset-link", text);
+                    link.href = url;
+                    link.dataset.media = "image";
+                    link.title = "Hover to preview, click to open";
+                    link.addEventListener("click", ev => {
+                        ev.preventDefault();
+                        hidePreview();
+                        openViewer(assets, Math.max(0, indexOf(url)));
+                    });
+                    td.append(link);
+                } else {
+                    td.textContent = text.length > 300 ? text.slice(0, 300) + "..." : text;
+                }
                 tr.append(td);
                 body.append(tr);
             });
