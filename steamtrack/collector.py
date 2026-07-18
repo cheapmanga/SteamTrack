@@ -18,11 +18,12 @@ import argparse
 import logging
 import signal
 import sys
+import time
 from datetime import datetime, timezone
 
 from steam.client import SteamClient
 
-from . import db, diff, news
+from . import db, diff, news, probes
 
 log = logging.getLogger("collector")
 
@@ -30,6 +31,11 @@ log = logging.getLogger("collector")
 BATCH = 50
 # Filet si le flux se tait : on repasse quand meme sur les apps suivis.
 IDLE_SWEEP_S = 1800
+# Frequentation : assez frequent pour dessiner une courbe, assez espace pour ne
+# pas marteler l'API ni gonfler la base.
+PLAYERS_EVERY_S = 600
+# Fiche store et prix : ils bougent rarement, inutile d'y revenir souvent.
+DETAILS_EVERY_S = 21600
 
 
 class Collector:
@@ -37,6 +43,8 @@ class Collector:
         self.conn = conn
         self.client = SteamClient()
         self.running = True
+        self.last_players = 0.0
+        self.last_details = 0.0
 
     # -- Steam ------------------------------------------------------------
     def connect(self):
@@ -116,6 +124,34 @@ class Collector:
         return {"name": name, "news": added,
                 "missing_token": bool(info.get("_missing_token"))}
 
+    def run_probes(self, force=False):
+        """Releve frequentation et prix, chacun a son rythme.
+
+        Ces mesures ne se rattrapent pas : personne ne republie le nombre de
+        joueurs d'hier. Un releve manque est perdu, d'ou leur place dans la
+        boucle plutot que dans une tache separee qu'on oublierait de lancer.
+        """
+        now = time.time()
+        apps = list(db.tracked_ids(self.conn))
+        if not apps:
+            return
+
+        if force or now - self.last_players >= PLAYERS_EVERY_S:
+            measured = 0
+            for appid in apps:
+                if probes.sample_players(self.conn, appid) is not None:
+                    measured += 1
+            self.last_players = now
+            if measured:
+                log.info("frequentation relevee pour %d/%d app(s)", measured, len(apps))
+            probes.prune_players(self.conn)
+
+        if force or now - self.last_details >= DETAILS_EVERY_S:
+            for appid in apps:
+                probes.sample_details(self.conn, appid)
+            self.last_details = now
+            log.info("fiches store rafraichies (%d app(s))", len(apps))
+
     def bootstrap_pending(self):
         """Complete les jeux suivis qui n'ont pas encore de snapshot."""
         rows = self.conn.execute(
@@ -153,12 +189,16 @@ class Collector:
 
         idle = seen_apps = seen_lists = 0
         self.bootstrap_pending()
+        # Un premier releve immediat : sans lui, un redemarrage laisse un trou
+        # de dix minutes dans la courbe.
+        self.run_probes(force=True)
 
         while self.running:
             # Un jeu ajoute par l'API arrive sans snapshot : l'API ne joint pas
             # Steam elle-meme. On le complete ici, dans le seul processus qui a
             # le droit de le faire.
             self.bootstrap_pending()
+            self.run_probes()
 
             try:
                 resp = self.client.get_changes_since(last, True, False)

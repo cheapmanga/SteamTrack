@@ -363,3 +363,85 @@ footer {
     .search { margin-left: 0; width: 100%; }
     .hide-sm { display: none; }
 }
+
+/* ----- Onglets ----- */
+.tabs {
+    display: flex;
+    gap: 2px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 18px;
+}
+
+.tab {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 13px;
+    padding: 8px 14px;
+    cursor: pointer;
+}
+.tab:hover { color: var(--text); }
+.tab.on { color: #fff; border-bottom-color: var(--accent); }
+.tab .n { color: var(--dim); font-size: 11px; margin-left: 5px; }
+
+/* ----- Graphique de frequentation ----- */
+.chart {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 14px;
+    margin-bottom: 14px;
+}
+.chart svg { display: block; width: 100%; height: 220px; }
+.chart .grid { stroke: #2b3138; stroke-width: 1; }
+.chart .area { fill: rgba(103, 193, 245, 0.14); }
+.chart .curve { fill: none; stroke: var(--link); stroke-width: 2; }
+.chart .dot { fill: var(--link); }
+.chart .lbl { fill: var(--dim); font-size: 10px; }
+
+.statrow { display: flex; flex-wrap: wrap; gap: 26px; margin-bottom: 14px; }
+.stat-v { font-size: 20px; font-weight: 600; font-family: ui-monospace, Menlo, monospace; }
+.stat-l { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--dim); }
+
+/* ----- Tableaux secondaires ----- */
+.mini { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.mini th {
+    text-align: left; padding: 7px 10px; color: var(--dim);
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--border);
+}
+.mini td { padding: 7px 10px; border-bottom: 1px solid #23282e; }
+.mini .mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+.mini tr:hover { background: #1c2126; }
+
+.pill {
+    font-size: 10.5px; padding: 2px 7px; border-radius: 2px;
+    background: #2c3a47; color: #9dc6e4;
+}
+.pill.public { background: #263a2a; color: #8ec07c; }
+
+/* ----- Rafraichissement ----- */
+.auto {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    color: var(--dim);
+}
+
+.refresh {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 3px;
+    padding: 5px 11px;
+    font: inherit;
+    font-size: 12.5px;
+    cursor: pointer;
+}
+.refresh:hover { color: #fff; border-color: var(--accent); }
+.refresh:disabled { opacity: 0.45; cursor: default; }
+.auto .fresh { color: var(--link); }

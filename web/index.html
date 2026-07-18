@@ -31,10 +31,7 @@
   </div>
 </main>
 
-<footer>
-  steamtrack — Steam change history via the anonymous PICS feed.
-  History for each app starts the day it was added.
-</footer>
+<footer id="foot"></footer>
 
 <script src="steamtrack.js"></script>
 <script>
@@ -107,6 +104,10 @@
         const wrap = el("div", "table-wrap");
         wrap.append(table);
         content.replaceChildren(wrap);
+
+        document.getElementById("foot").replaceChildren(autoRefresh({
+            reload: async () => { location.reload(); return 0; },
+        }));
     } catch (err) {
         sub.textContent = "";
         content.replaceChildren(el("p", "empty err", "Could not reach the API: " + err.message));

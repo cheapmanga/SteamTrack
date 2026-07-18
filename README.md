@@ -85,6 +85,11 @@ CORS ouvert : l'API est appelable depuis n'importe quel domaine.
 | `GET /v1/apps/{appid}/changes` | historique (`kind`, `since`, `limit`, `offset`) |
 | `GET /v1/apps/{appid}/builds` | raccourci builds |
 | `GET /v1/changes` | flux global (`since` pour le suivi incremental) |
+| `GET /v1/apps/{appid}/players` | frequentation relevee, avec pic et moyenne |
+| `GET /v1/apps/{appid}/prices` | historique des prix |
+| `GET /v1/apps/{appid}/depots` | depots et branches |
+| `GET /v1/apps/{appid}/info` | fiche store |
+| `GET /v1/search?q=` | recherche parmi les jeux suivis |
 | `POST /v1/apps?appid=` | suivre un jeu — **cle admin** |
 | `DELETE /v1/apps/{appid}` | retirer un jeu et son historique — **cle admin** |
 
@@ -114,7 +119,7 @@ Servie a la racine par le meme processus que l'API :
 | Page | Contenu |
 |---|---|
 | `/` | jeux suivis, vignettes, volume et date du dernier changement |
-| `/app.html?appid=730` | historique d'un jeu : filtres par categorie, recherche, diffs |
+| `/app.html?appid=730` | onglets History / Depots / Branches / Charts / Info |
 | `/changes.html` | flux recent, tous jeux confondus |
 
 Apparence calquee sur SteamDB : fond sombre, typographie dense, panneaux a
@@ -154,3 +159,5 @@ l'API. Les assets y portent leur URL, ce qui permet apercu et telechargement.
 - [x] Cles d'API en base
 - [x] API HTTP (cles, quotas, OpenAPI)
 - [x] Interface web
+- [x] Frequentation, prix, depots, branches, fiche store
+- [x] Rafraichissement automatique des pages
