@@ -1,0 +1,80 @@
+# Tunnel Cloudflare vers l'API steamtrack.
+#
+# Le tunnel est une connexion SORTANTE : cloudflared joint le reseau Cloudflare,
+# qui lui renvoie le trafic public. Rien n'est a ouvrir sur la box, et le
+# pare-feu de la VM peut rester ferme en entree.
+#
+# ---------------------------------------------------------------------------
+# PROCEDURE (a executer sur la VM, dans l'ordre) -- NE PAS scripter : l'etape
+# "login" ouvre un navigateur et exige un compte Cloudflare avec un domaine.
+#
+#   1. Installer cloudflared (paquet .deb officiel Cloudflare).
+#
+#   2. cloudflared tunnel login
+#      Affiche une URL a ouvrir dans un navigateur. Si la VM est sans interface
+#      graphique, copier l'URL sur le poste de travail. Choisir le domaine a
+#      utiliser. Ecrit ~/.cloudflared/cert.pem.
+#
+#   3. cloudflared tunnel create steamtrack
+#      Ecrit les identifiants du tunnel dans ~/.cloudflared/<UUID>.json et
+#      affiche l'UUID. Ce fichier est un secret : il vaut un acces au tunnel.
+#
+#   4. cloudflared tunnel route dns steamtrack steamtrack.example.com
+#      Cree l'enregistrement DNS. Remplacer par le domaine reel.
+#
+#   5. Deplacer la configuration la ou le service la lira, en root :
+#        mkdir -p /etc/cloudflared
+#        cp ~/.cloudflared/cert.pem ~/.cloudflared/<UUID>.json /etc/cloudflared/
+#        cp config.yml /etc/cloudflared/config.yml   (contenu ci-dessous)
+#        chown -R cloudflared:cloudflared /etc/cloudflared
+#        chmod 600 /etc/cloudflared/*.json /etc/cloudflared/cert.pem
+#
+#   6. Creer l'utilisateur de service s'il n'existe pas :
+#        useradd --system --no-create-home --shell /usr/sbin/nologin cloudflared
+#
+#   7. cp cloudflared.service /etc/systemd/system/
+#      systemctl daemon-reload && systemctl enable --now cloudflared
+#
+# ---------------------------------------------------------------------------
+# /etc/cloudflared/config.yml attendu :
+#
+#   tunnel: <UUID>
+#   credentials-file: /etc/cloudflared/<UUID>.json
+#   # Pas de metriques exposees hors de la machine.
+#   metrics: 127.0.0.1:20241
+#   ingress:
+#     - hostname: steamtrack.example.com
+#       service: http://localhost:8080
+#     # Regle terminale obligatoire : tout le reste est refuse.
+#     - service: http_status:404
+#
+# ---------------------------------------------------------------------------
+
+[Unit]
+Description=Tunnel Cloudflare pour steamtrack
+After=network-online.target steamtrack-api.service
+Wants=network-online.target
+# Le tunnel perd sa connexion des que le lien reseau bouge : ne pas abandonner
+# apres quelques echecs rapides, sinon une micro-coupure coupe le service.
+StartLimitIntervalSec=0
+
+[Service]
+Type=notify
+User=cloudflared
+Group=cloudflared
+ExecStart=/usr/bin/cloudflared --no-autoupdate --config /etc/cloudflared/config.yml tunnel run
+Restart=always
+RestartSec=10
+
+# cloudflared n'a besoin ni d'ecrire sur le disque, ni de privileges.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+# Aucun ReadWritePaths : /etc/cloudflared est lu, jamais ecrit (--no-autoupdate).
+
+[Install]
+WantedBy=multi-user.target

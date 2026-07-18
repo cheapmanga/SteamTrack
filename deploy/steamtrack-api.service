@@ -12,10 +12,35 @@ Type=simple
 User=steamtrack
 WorkingDirectory=/opt/steamtrack
 Environment=STEAMTRACK_DB=/opt/steamtrack/data/steamtrack.db
-# Ecoute sur toutes les interfaces : l'API doit etre joignable depuis le LAN.
-# Pour une exposition publique, passer par un tunnel plutot que d'ouvrir un
-# port sur la box -- et changer d'abord le mot de passe root de la VM.
-ExecStart=/opt/steamtrack/.venv/bin/uvicorn steamtrack.api:app --host 0.0.0.0 --port 8080
+# Ecoute sur toutes les interfaces : l'API doit etre joignable depuis le LAN et
+# depuis cloudflared. Le pare-feu (deploy/firewall.sh) restreint 8080 au LAN ;
+# l'acces public passe par le tunnel sortant, jamais par un port ouvert sur la
+# box -- et changer d'abord le mot de passe root de la VM.
+#
+# --workers 3 sur 2 vCPU. Les workers uvicorn sont des boucles asyncio, mais les
+# endpoints de steamtrack sont synchrones : FastAPI les execute dans un pool de
+# threads, ou ils passent l'essentiel de leur temps bloques sur SQLite plutot
+# qu'a consommer du CPU. 2 workers saturent les 2 coeurs, le 3e absorbe les
+# attentes disque (WAL + fsync sur les ecritures api_usage) sans surcharger les
+# 2 Go de RAM -- chaque worker est un interpreteur Python complet. Au-dela, on
+# multiplie les connexions SQLite pour rien.
+#
+# Concurrence : sans danger ici. Chaque requete ouvre sa propre connexion, le
+# collecteur reste seul gros ecrivain, et WAL admet N lecteurs pendant qu'il
+# ecrit. L'API ecrit malgre tout les compteurs de quota dans api_usage : ces
+# ecritures sont serialisees par SQLite et db.connect() pose timeout=30, donc un
+# worker attend son tour au lieu de renvoyer "database is locked".
+#
+# --proxy-headers + --forwarded-allow-ips : derriere le tunnel, toutes les
+# requetes arrivent de 127.0.0.1. Sans ces options, uvicorn ignore
+# X-Forwarded-For et l'API voit une seule IP cliente -- tous les visiteurs
+# anonymes partagent alors le meme seau de quota et se bloquent mutuellement.
+# La valeur reste 127.0.0.1 : ne faire confiance qu'au tunnel local, jamais a
+# "*", qui laisserait n'importe qui usurper son IP via un en-tete forge.
+ExecStart=/opt/steamtrack/.venv/bin/uvicorn steamtrack.api:app \
+    --host 0.0.0.0 --port 8080 \
+    --workers 3 \
+    --proxy-headers --forwarded-allow-ips 127.0.0.1
 Restart=always
 RestartSec=10
 NoNewPrivileges=true

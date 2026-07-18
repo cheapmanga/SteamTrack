@@ -13,11 +13,28 @@ const KINDS = {
     meta:   "Other",
 };
 
+// Un detail d'erreur n'est pas toujours une chaine : sur un 422 de validation,
+// FastAPI renvoie une LISTE d'objets, qui s'affichait "[object Object]" une
+// fois concatenee. On la remet a plat en un message lisible.
+function errorText(body, status) {
+    const detail = body && body.detail;
+    if (typeof detail === "string" && detail) return detail;
+    if (Array.isArray(detail)) {
+        const parts = detail.map(d => {
+            const field = Array.isArray(d.loc) ? d.loc[d.loc.length - 1] : null;
+            return field ? `${field}: ${d.msg}` : d.msg;
+        }).filter(Boolean);
+        if (parts.length) return parts.join("; ");
+    }
+    if (status === 429) return "Hourly quota exceeded — try again shortly.";
+    return `HTTP ${status}`;
+}
+
 async function api(path) {
     const resp = await fetch(API + path, { cache: "no-store" });
     if (!resp.ok) {
         const body = await resp.json().catch(() => ({}));
-        throw new Error(body.detail || `HTTP ${resp.status}`);
+        throw new Error(errorText(body, resp.status));
     }
     return resp.json();
 }
@@ -346,6 +363,9 @@ function autoRefresh({ every = 300000, reload, label = "" } = {}) {
 
     let nextAt = Date.now() + every;
     let busy = false;
+    // Memorise pour pouvoir l'annuler : deux rafraichissements a moins de 8 s
+    // d'intervalle et le minuteur du premier effaçait l'indicateur du second.
+    let freshTimer = null;
 
     async function run(manual) {
         if (busy) return;
@@ -358,7 +378,8 @@ function autoRefresh({ every = 300000, reload, label = "" } = {}) {
             status.classList.toggle("fresh", !!fresh);
             if (fresh) {
                 status.textContent = `${fresh} new`;
-                setTimeout(() => status.classList.remove("fresh"), 8000);
+                clearTimeout(freshTimer);
+                freshTimer = setTimeout(() => status.classList.remove("fresh"), 8000);
             }
         } catch {
             // Le flux affiche reste en place : mieux vaut des donnees un peu

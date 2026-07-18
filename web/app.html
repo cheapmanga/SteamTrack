@@ -17,6 +17,7 @@
     <nav>
       <a href="index.html">Apps</a>
       <a href="changes.html">Changes</a>
+      <a href="about.html">About</a>
       <a href="/docs">API</a>
     </nav>
   </div>
@@ -533,13 +534,28 @@
     // L'API plafonne a 500 entrees par appel : on pagine jusqu'a tout avoir,
     // sinon l'historique parait tronque sans le dire (852 changements pour
     // Fading Echo, dont 352 restaient invisibles).
+    // Plafond de pagination initiale.
+    //
+    // La page chargeait TOUT l'historique par pages de 500 avant d'afficher
+    // quoi que ce soit. Sur un jeu a 15 000 changements cela faisait 30 requetes
+    // pour la seule visite (37 avec le reste de la page) et 2,7 Mio de JSON ;
+    // le rafraichissement automatique rejouant loadAll() toutes les 5 minutes,
+    // un onglet simplement laisse ouvert consommait ~420 requetes/heure et
+    // epuisait seul le quota anonyme de 600.
+    //
+    // 6 pages = 3000 changements : au-dela, l'interet d'un historique complet
+    // en memoire est nul (les listes sont paginees a l'ecran de toute façon) et
+    // `total`, renvoye par l'API, reste exact pour l'affichage des compteurs.
+    const MAX_PAGES = 6;
+
     async function loadAllChanges() {
         const out = [];
-        for (let offset = 0; ; offset += 500) {
-            const page = await api(`/v1/apps/${appid}/changes?limit=500&offset=${offset}`);
-            out.push(...(page.changes || []));
-            if (out.length >= (page.total || 0) || !(page.changes || []).length) break;
-            if (offset > 20000) break;          // garde-fou
+        for (let page = 0; page < MAX_PAGES; page++) {
+            const data = await api(
+                `/v1/apps/${appid}/changes?limit=500&offset=${page * 500}`);
+            const batch = data.changes || [];
+            out.push(...batch);
+            if (!batch.length || out.length >= (data.total || 0)) break;
         }
         return out;
     }

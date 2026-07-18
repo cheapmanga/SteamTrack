@@ -6,6 +6,10 @@
     steamtrack remove 730              demande confirmation
     steamtrack show 730
     steamtrack key add "bot discord" --quota 1000
+    steamtrack key add "moi" --admin    cle illimitee et administrateur
+    steamtrack key list
+    steamtrack key show st_xxx          consommation de l'heure et quota restant
+    steamtrack key revoke st_xxx
 """
 
 import argparse
@@ -241,9 +245,37 @@ def cmd_reclean(conn, args):
     return 0
 
 
+def _resolve_key(conn, needle):
+    """Retrouve une cle depuis sa valeur exacte ou son libelle.
+
+    Accepter le libelle evite d'avoir a recopier un jeton de 32 caracteres pour
+    revoquer une cle qu'on vient de nommer.
+    """
+    row = conn.execute("SELECT * FROM api_keys WHERE key = ?", (needle,)).fetchone()
+    if row:
+        return row
+    rows = conn.execute("SELECT * FROM api_keys WHERE label = ?", (needle,)).fetchall()
+    if len(rows) == 1:
+        return rows[0]
+    if len(rows) > 1:
+        print(f"{len(rows)} cles portent le libelle {needle!r} : designez-la par sa valeur")
+        for r in rows:
+            print(f"  {r['key']}")
+        return None
+    print(f"aucune cle ne correspond a {needle!r}")
+    return None
+
+
 def cmd_key(conn, args):
+    from . import auth
+
     if args.key_action == "add":
+        if not args.label:
+            print("un libelle est requis : steamtrack key add \"mon bot\"")
+            return 1
         key = "st_" + secrets.token_urlsafe(24)
+        # --admin sans --quota = la cle du proprietaire : quota_per_hour reste
+        # NULL, ce que auth.consume interprete comme illimite.
         conn.execute(
             """INSERT INTO api_keys (key, label, quota_per_hour, is_admin, created_at)
                VALUES (?, ?, ?, ?, ?)""",
@@ -251,9 +283,18 @@ def cmd_key(conn, args):
              datetime.now(timezone.utc).isoformat()),
         )
         print(f"cle creee : {key}")
-        print(f"  quota : {args.quota if args.quota else 'illimite'} requetes/heure")
+        print(f"  libelle : {args.label}")
+        if args.quota is None:
+            print("  quota   : illimite (aucun comptage, aucun 429)")
+        else:
+            print(f"  quota   : {args.quota} requetes/heure")
         if args.admin:
-            print("  administrateur : peut ajouter et supprimer des jeux")
+            print("  droits  : administrateur — peut ajouter et supprimer des jeux")
+        else:
+            print("  droits  : lecture seule")
+        print()
+        print("  Utilisation : en-tete  X-API-Key: " + key)
+        print("  Cette cle ne sera plus reaffichee en entier ailleurs : notez-la.")
         return 0
 
     if args.key_action == "list":
@@ -261,16 +302,73 @@ def cmd_key(conn, args):
         if not rows:
             print("aucune cle")
             return 0
+        print(f"  {'CLE':38}  {'LIBELLE':24}  {'QUOTA':>10}  {'DROITS':6}  ETAT")
+        print("  " + "-" * 92)
+        anon = 0
         for r in rows:
-            quota = r["quota_per_hour"] or "illimite"
-            state = "revoquee" if r["revoked_at"] else "active"
-            print(f"  {r['key']}  {r['label']:20}  {str(quota):>9}/h  {state}")
+            # Les seaux anonymes (un par IP) ne sont pas des cles : on les
+            # resume en une ligne au lieu d'inonder le tableau.
+            if r["key"].startswith(auth.ANON_KEY + ":"):
+                anon += 1
+                continue
+            quota = "illimite" if r["quota_per_hour"] is None else f"{r['quota_per_hour']}/h"
+            rights = "admin" if r["is_admin"] else "lecture"
+            state = f"revoquee ({r['revoked_at'][:10]})" if r["revoked_at"] else "active"
+            # Une cle illimitee n'est jamais comptee : afficher 0 laisserait
+            # croire qu'elle ne sert pas.
+            suffix = ("  [non compte]" if r["quota_per_hour"] is None
+                      else f"  [{auth.usage(conn, r['key'])} cette heure]")
+            if r["key"] == auth.ANON_KEY:
+                state = "politique anonyme"
+                suffix = ""
+            print(f"  {r['key']:38}  {r['label'][:24]:24}  {quota:>10}  "
+                  f"{rights:6}  {state}{suffix}")
+        print()
+        print(f"  anonyme : {auth.ANON_QUOTA} requetes/heure et par IP, "
+              f"{anon} IP active(s) sur la fenetre en cours")
+        return 0
+
+    if args.key_action == "show":
+        row = _resolve_key(conn, args.label)
+        if row is None:
+            return 1
+        hits = auth.usage(conn, row["key"])
+        print(f"cle     : {row['key']}")
+        print(f"libelle : {row['label']}")
+        print(f"droits  : {'administrateur' if row['is_admin'] else 'lecture seule'}")
+        print(f"etat    : {'revoquee le ' + row['revoked_at'][:19] if row['revoked_at'] else 'active'}")
+        print(f"creee   : {row['created_at'][:19]}")
+        print()
+        print(f"fenetre : {auth.current_hour()}:00 UTC")
+        print(f"utilise : {hits} requete(s) dans l'heure en cours")
+        if row["quota_per_hour"] is None:
+            print("restant : illimite — cette cle ne recevra jamais de 429")
+        else:
+            remaining = max(0, row["quota_per_hour"] - hits)
+            print(f"quota   : {row['quota_per_hour']} requetes/heure")
+            print(f"restant : {remaining}")
+            if remaining == 0:
+                print("  -> le quota est epuise : les appels renvoient 429 jusqu'a la remise a zero")
+        print(f"remise a zero : {auth.next_hour_reset()[:19]} UTC "
+              f"(dans {auth.seconds_until_reset() // 60} min)")
+        if row["revoked_at"]:
+            print()
+            print("Attention : cette cle est revoquee, ses appels renvoient 401.")
         return 0
 
     if args.key_action == "revoke":
+        row = _resolve_key(conn, args.label)
+        if row is None:
+            return 1
+        if row["key"] == auth.ANON_KEY:
+            print("la ligne anonyme n'est pas une cle : ajustez auth.ANON_QUOTA")
+            return 1
+        if row["revoked_at"]:
+            print(f"cle deja revoquee le {row['revoked_at'][:19]}")
+            return 0
         conn.execute("UPDATE api_keys SET revoked_at = ? WHERE key = ?",
-                     (datetime.now(timezone.utc).isoformat(), args.label))
-        print("cle revoquee")
+                     (datetime.now(timezone.utc).isoformat(), row["key"]))
+        print(f"cle revoquee : {row['key']} ({row['label']})")
         return 0
     return 1
 
@@ -309,8 +407,11 @@ def main():
     p.set_defaults(func=cmd_reclean)
 
     p = sub.add_parser("key", help="gerer les cles d'API")
-    p.add_argument("key_action", choices=["add", "list", "revoke"])
-    p.add_argument("label", nargs="?", default="")
+    p.add_argument("key_action", choices=["add", "list", "show", "revoke"])
+    # Un seul positionnel pour les quatre actions : c'est un libelle pour `add`,
+    # et une cle (ou le libelle qui la designe) pour `show` et `revoke`.
+    p.add_argument("label", nargs="?", default="", metavar="LABEL|CLE",
+                   help="add : libelle de la cle ; show/revoke : la cle ou son libelle")
     p.add_argument("--quota", type=int, default=None,
                    help="requetes par heure ; omis = illimite")
     p.add_argument("--admin", action="store_true",
@@ -318,7 +419,9 @@ def main():
     p.set_defaults(func=cmd_key)
 
     args = ap.parse_args()
-    conn = db.connect(args.db)
+    # init() et non connect() : la CLI est un point d'entree, c'est ici que les
+    # migrations doivent tourner (l'API ne migre plus par requete).
+    conn = db.init(args.db)
     try:
         return args.func(conn, args)
     finally:

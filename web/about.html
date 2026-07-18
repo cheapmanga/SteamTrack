@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>About — steamtrack</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <div class="bar">
+    <a href="index.html" class="logo">steam<span>track</span></a>
+    <nav>
+      <a href="index.html">Apps</a>
+      <a href="changes.html">Changes</a>
+      <a href="about.html" class="active">About</a>
+      <a href="/docs">API</a>
+    </nav>
+  </div>
+</header>
+
+<main class="prose">
+  <h1>About steamtrack</h1>
+  <p class="sub">What this site records, where it comes from, and how to query it.</p>
+
+  <h2>What it does</h2>
+  <p>
+    steamtrack watches a hand-picked list of games on Steam and writes down what changes
+    about them. When a game ships a new build, renames a branch, adds or removes a depot,
+    edits its store page, changes price, or posts a patch note, that event is stored and
+    shown here with a timestamp and a before/after view of exactly which fields moved.
+  </p>
+  <p>
+    It also samples how many people are playing each tracked game, so the player count
+    builds up into a chart over time.
+  </p>
+  <p>
+    It is not a catalogue of all of Steam. Only games that have been explicitly added are
+    tracked &mdash; you can see the full list on the <a href="index.html">Apps</a> page.
+  </p>
+
+  <h2>Where the data comes from</h2>
+  <p>
+    Everything comes from Steam itself. The collector connects to Steam as an
+    <strong>anonymous user</strong> &mdash; no account, no login, no credentials &mdash; and
+    subscribes to PICS, the same public product-information feed that Steam clients use to
+    learn that an app has been updated. This is the same public source SteamDB reads.
+    Player counts and store details come from Steam's own public endpoints.
+  </p>
+  <p>
+    Nothing here is scraped from SteamDB, and nothing is guessed. If a field appears on this
+    site, Steam published it.
+  </p>
+
+  <h2>The one big limitation: history starts when tracking starts</h2>
+  <div class="callout">
+    <p>
+      <strong>A game's history on this site begins on the day it was added, not on the day
+      the game was released.</strong> If a game was added last week, you will see last week's
+      changes and nothing before that.
+    </p>
+    <p>
+      This is not an oversight, and it is not something that can be fixed by waiting. Steam's
+      PICS feed only announces changes as they happen &mdash; it does not let anyone ask for
+      past changelists. In the same way, the number of people playing a game yesterday is not
+      republished anywhere; if nobody was sampling it at the time, that number is simply gone.
+      Backfilling the past is impossible from the live feed alone.
+    </p>
+    <p>
+      There is one way around it: a SteamDB export for a game can be imported by hand, which
+      pushes that game's history further back. Where that has been done, the older entries you
+      see came from that import rather than from the live feed.
+    </p>
+  </div>
+  <p>
+    So the honest summary is: the further back you look, the thinner it gets, and the earliest
+    date shown for a game is the date tracking began.
+  </p>
+
+  <h2>Using the API</h2>
+  <p>
+    Everything the website shows is served by a public JSON API on this same host. Responses
+    are plain JSON, and the interactive reference with every endpoint and parameter lives at
+    <a href="/docs">/docs</a>.
+  </p>
+
+  <h3>Authentication and quota</h3>
+  <p>
+    You do not need a key to try it. Requests without a key get an hourly allowance counted
+    <strong>per IP address</strong>, currently
+    <strong id="quota">a limited number of requests per hour</strong>. Browsing this website
+    draws on that same allowance, since the pages call the public API just like you would.
+  </p>
+  <p>
+    For heavier or automated use, ask for an API key and send it in the
+    <code>X-API-Key</code> header. A key carries its own hourly budget, independent of the
+    address you call from.
+  </p>
+  <p>
+    Every answer carries your budget in its headers: <code>X-RateLimit-Limit</code>,
+    <code>X-RateLimit-Remaining</code> and <code>X-RateLimit-Reset</code> (the UTC time your
+    counter goes back to zero). Going over the limit returns HTTP 429; wait for the reset.
+  </p>
+
+  <h3>Examples</h3>
+  <p>List every tracked game:</p>
+  <div class="codeblock">
+    <pre>curl <span class="origin">https://example.org</span>/v1/apps</pre>
+  </div>
+
+  <p>The same call with an API key:</p>
+  <div class="codeblock">
+    <pre>curl -H "X-API-Key: YOUR_KEY" <span class="origin">https://example.org</span>/v1/apps</pre>
+  </div>
+
+  <p>The ten most recent changes for one game (730 is Counter-Strike 2):</p>
+  <div class="codeblock">
+    <pre>curl "<span class="origin">https://example.org</span>/v1/apps/730/changes?limit=10"</pre>
+  </div>
+
+  <p>The player-count history of a game:</p>
+  <div class="codeblock">
+    <pre>curl <span class="origin">https://example.org</span>/v1/apps/730/players</pre>
+  </div>
+
+  <p>The combined feed of recent changes across every tracked game:</p>
+  <div class="codeblock">
+    <pre>curl "<span class="origin">https://example.org</span>/v1/changes?limit=50"</pre>
+  </div>
+
+  <p>Check what is left of your quota without printing the body:</p>
+  <div class="codeblock">
+    <pre>curl -sS -D - -o /dev/null <span class="origin">https://example.org</span>/v1/apps | grep -i x-ratelimit</pre>
+  </div>
+
+  <h3>Main endpoints</h3>
+  <div class="table-wrap">
+    <table class="mini">
+      <thead>
+        <tr><th>Endpoint</th><th>Returns</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="mono">/health</td><td>Service status and collector position</td></tr>
+        <tr><td class="mono">/v1/apps</td><td>Every tracked game</td></tr>
+        <tr><td class="mono">/v1/apps/{appid}</td><td>One game and its summary</td></tr>
+        <tr><td class="mono">/v1/apps/{appid}/changes</td><td>That game's change history</td></tr>
+        <tr><td class="mono">/v1/apps/{appid}/builds</td><td>Build IDs over time</td></tr>
+        <tr><td class="mono">/v1/apps/{appid}/depots</td><td>Depots, branches and manifests</td></tr>
+        <tr><td class="mono">/v1/apps/{appid}/players</td><td>Player-count samples</td></tr>
+        <tr><td class="mono">/v1/apps/{appid}/prices</td><td>Price history</td></tr>
+        <tr><td class="mono">/v1/apps/{appid}/patches</td><td>Patch notes and announcements</td></tr>
+        <tr><td class="mono">/v1/changes</td><td>All games, most recent first</td></tr>
+        <tr><td class="mono">/v1/search</td><td>Find a tracked game by name</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>The full list, with every query parameter, is at <a href="/docs">/docs</a>.</p>
+
+  <h2>Fair use</h2>
+  <p>
+    Please cache what you fetch and avoid polling in a tight loop. The collector only learns
+    about a change when Steam announces it, so checking more than once every few minutes
+    tells you nothing new. This runs on a small server; the quota exists so that one busy
+    script cannot take the site down for everyone else.
+  </p>
+
+  <p class="disclaimer">
+    steamtrack is an independent hobby project. It is <strong>not affiliated with, endorsed
+    by, or connected to Valve Corporation</strong>, and it is <strong>not affiliated with
+    SteamDB</strong>. Steam and the Steam logo are trademarks of Valve Corporation. Game
+    names, artwork and announcement text belong to their respective owners and are shown here
+    to identify the games being tracked. The data is provided as-is, with no guarantee of
+    accuracy, completeness or availability.
+  </p>
+</main>
+
+<footer>steamtrack — Steam change history via the anonymous PICS feed.</footer>
+
+<script src="steamtrack.js"></script>
+<script>
+(function () {
+    // Les exemples curl doivent etre collables tels quels : on remplace l'hote
+    // d'exemple par celui d'ou la page est reellement servie.
+    document.querySelectorAll(".origin").forEach(node => {
+        node.textContent = location.origin;
+    });
+
+    // Bouton "Copy" sur chaque bloc de code, ajoute en JS pour que le texte
+    // copie soit exactement celui du <pre> et rien d'autre.
+    document.querySelectorAll(".codeblock").forEach(block => {
+        const pre = block.querySelector("pre");
+        const btn = el("button", "copy", "Copy");
+        btn.type = "button";
+        btn.addEventListener("click", async () => {
+            try {
+                await navigator.clipboard.writeText(pre.textContent);
+                btn.textContent = "Copied";
+                btn.classList.add("done");
+            } catch (err) {
+                // clipboard est refuse hors HTTPS : on selectionne le texte
+                // pour que la copie manuelle reste possible.
+                const range = document.createRange();
+                range.selectNodeContents(pre);
+                const sel = window.getSelection();
+                sel.removeAllRanges();
+                sel.addRange(range);
+                btn.textContent = "Select + copy";
+            }
+            setTimeout(() => {
+                btn.textContent = "Copy";
+                btn.classList.remove("done");
+            }, 1800);
+        });
+        block.append(btn);
+    });
+
+    // Le quota anonyme est une constante du serveur : plutot que de le figer
+    // dans la page, on lit l'en-tete que l'API renvoie deja.
+    //
+    // /api et non /v1/apps : seuls les en-tetes de quota nous interessent, et
+    // /v1/apps renvoyait la liste complete des jeux, bannieres comprises, pour
+    // n'en lire qu'un en-tete. /api rend quelques lignes et porte les memes
+    // en-tetes. (HEAD ne conviendrait pas : FastAPI n'enregistre pas
+    // automatiquement HEAD sur une route GET, la requete tomberait en 404.)
+    fetch("/api").then(res => {
+        const limit = res.headers.get("X-RateLimit-Limit");
+        if (limit) {
+            document.getElementById("quota").textContent =
+                Number(limit).toLocaleString("en-US") + " requests per hour";
+        }
+    }).catch(() => { /* la phrase generique reste affichee */ });
+})();
+</script>
+</body>
+</html>
