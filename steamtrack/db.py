@@ -27,7 +27,23 @@ def connect(path=None):
     conn = sqlite3.connect(path, timeout=30, isolation_level=None)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA.read_text(encoding="utf-8"))
+    migrate(conn)
     return conn
+
+
+# Colonnes ajoutees apres coup. CREATE TABLE IF NOT EXISTS laisse les bases
+# existantes intactes : sans ces ALTER, une base d'avant la modification
+# planterait a la premiere requete sur la nouvelle colonne.
+MIGRATIONS = [
+    ("api_keys", "is_admin", "INTEGER NOT NULL DEFAULT 0"),
+]
+
+
+def migrate(conn):
+    for table, column, spec in MIGRATIONS:
+        columns = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in columns:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {spec}")
 
 
 # --- apps ----------------------------------------------------------------

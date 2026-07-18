@@ -116,6 +116,27 @@ class Collector:
         return {"name": name, "news": added,
                 "missing_token": bool(info.get("_missing_token"))}
 
+    def bootstrap_pending(self):
+        """Complete les jeux suivis qui n'ont pas encore de snapshot."""
+        rows = self.conn.execute(
+            """SELECT a.appid FROM apps a
+               LEFT JOIN snapshots s ON s.appid = a.appid
+               WHERE s.appid IS NULL"""
+        ).fetchall()
+        for row in rows:
+            appid = row["appid"]
+            log.info("initialisation de l'app %s (ajoutee via l'API)", appid)
+            try:
+                result = self.bootstrap(appid)
+            except Exception as exc:                      # noqa: BLE001
+                log.warning("  echec, nouvel essai au prochain tour : %s", exc)
+                continue
+            if result:
+                log.info("  %s : etat enregistre, %d annonce(s)",
+                         result["name"] or appid, result["news"])
+            else:
+                log.warning("  appinfo introuvable pour %s", appid)
+
     # -- Boucle -----------------------------------------------------------
     def run(self):
         self.connect()
@@ -131,7 +152,14 @@ class Collector:
         last = int(last)
 
         idle = seen_apps = seen_lists = 0
+        self.bootstrap_pending()
+
         while self.running:
+            # Un jeu ajoute par l'API arrive sans snapshot : l'API ne joint pas
+            # Steam elle-meme. On le complete ici, dans le seul processus qui a
+            # le droit de le faire.
+            self.bootstrap_pending()
+
             try:
                 resp = self.client.get_changes_since(last, True, False)
             except Exception as exc:                      # noqa: BLE001

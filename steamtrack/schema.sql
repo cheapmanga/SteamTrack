@@ -50,10 +50,13 @@ CREATE INDEX IF NOT EXISTS idx_changes_time     ON changes (occurred_at DESC);
 CREATE INDEX IF NOT EXISTS idx_changes_kind     ON changes (kind, occurred_at DESC);
 
 -- Cles d'API. quota_per_hour NULL = illimite (les tiennes, et les invites).
+-- is_admin autorise en plus l'ajout et la suppression de jeux : ces endpoints
+-- modifient ce que le service collecte, ils ne peuvent pas etre ouverts a tous.
 CREATE TABLE IF NOT EXISTS api_keys (
     key            TEXT PRIMARY KEY,
     label          TEXT NOT NULL,
     quota_per_hour INTEGER,
+    is_admin       INTEGER NOT NULL DEFAULT 0,
     created_at     TEXT NOT NULL,
     revoked_at     TEXT
 );
