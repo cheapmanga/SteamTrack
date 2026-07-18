@@ -12,7 +12,10 @@ Type=simple
 User=steamtrack
 WorkingDirectory=/opt/steamtrack
 Environment=STEAMTRACK_DB=/opt/steamtrack/data/steamtrack.db
-ExecStart=/opt/steamtrack/.venv/bin/uvicorn steamtrack.api:app --host 127.0.0.1 --port 8080
+# Ecoute sur toutes les interfaces : l'API doit etre joignable depuis le LAN.
+# Pour une exposition publique, passer par un tunnel plutot que d'ouvrir un
+# port sur la box -- et changer d'abord le mot de passe root de la VM.
+ExecStart=/opt/steamtrack/.venv/bin/uvicorn steamtrack.api:app --host 0.0.0.0 --port 8080
 Restart=always
 RestartSec=10
 NoNewPrivileges=true
