@@ -419,6 +419,13 @@
         viewEl.replaceChildren(bar, feed, more);
     }
 
+    // Bandeau affiche au-dessus des depots reconstitues : leur fraicheur n'est
+    // pas celle d'une lecture directe de PICS, il faut le dire.
+    function derivedNote() {
+        if (!depots || depots.source !== "history") return null;
+        return el("div", "notice", depots.note || "Rebuilt from imported history.");
+    }
+
     function renderDepots() {
         if (!depots || !depots.depots.length) {
             viewEl.replaceChildren(el("p", "empty",
@@ -451,7 +458,8 @@
         table.append(body);
         const wrap = el("div", "table-wrap");
         wrap.append(table);
-        viewEl.replaceChildren(wrap);
+        const note = derivedNote();
+        viewEl.replaceChildren(...(note ? [note, wrap] : [wrap]));
     }
 
     function renderBranches() {
@@ -482,7 +490,8 @@
         table.append(body);
         const wrap = el("div", "table-wrap");
         wrap.append(table);
-        viewEl.replaceChildren(wrap);
+        const note = derivedNote();
+        viewEl.replaceChildren(...(note ? [note, wrap] : [wrap]));
     }
 
     function renderCharts() {

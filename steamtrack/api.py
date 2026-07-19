@@ -21,7 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, db, diff, probes
+from . import auth, db, derive, diff, probes
 
 app = FastAPI(
     title="steamtrack",
@@ -332,6 +332,23 @@ def app_depots(appid: int = APPID, *, conn=Depends(get_conn), who=Depends(caller
     depots = snapshot.get("depots") or {}
     branches = depots.get("branches") or {} if isinstance(depots, dict) else {}
 
+    # Steam ne publie pas les depots des apps a jeton. Quand un historique
+    # SteamDB a ete importe, on peut les reconstituer en rejouant ses
+    # evenements -- c'est mieux qu'un onglet vide, a condition de dire d'ou
+    # vient l'information.
+    if not depots:
+        rebuilt = derive.depots_from_history(conn, appid)
+        if rebuilt:
+            return {
+                "appid": appid,
+                "depots_public": False,
+                "source": "history",
+                "note": ("Steam does not publish this app's depots. Rebuilt by "
+                         "replaying an imported SteamDB history, so it reflects "
+                         "the last recorded change, not necessarily the present."),
+                **rebuilt,
+            }
+
     listing = []
     for key, value in (depots.items() if isinstance(depots, dict) else []):
         if not key.isdigit() or not isinstance(value, dict):
@@ -352,6 +369,7 @@ def app_depots(appid: int = APPID, *, conn=Depends(get_conn), who=Depends(caller
     return {
         "appid": appid,
         "depots_public": not bool(snapshot.get("_missing_token")),
+        "source": "pics",
         "depots": sorted(listing, key=lambda d: d["depot"]),
         "branches": [
             {
