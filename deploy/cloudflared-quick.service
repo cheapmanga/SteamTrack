@@ -1,0 +1,44 @@
+# Tunnel Cloudflare "quick" : URL publique immediate, sans compte.
+#
+# A la difference de cloudflared.service (tunnel nomme, lie a un domaine), ce
+# tunnel ne demande aucune authentification : cloudflared tire une adresse
+# aleatoire en trycloudflare.com et la publie.
+#
+# CONTREPARTIE, a connaitre avant de diffuser l'adresse : elle CHANGE a chaque
+# redemarrage du service. Un lien partage devient mort au prochain reboot de la
+# VM. Pour une adresse stable sur un domaine, passer a cloudflared.service --
+# la procedure y est decrite, mais elle exige un navigateur et un compte.
+#
+# Relever l'adresse courante :
+#   /opt/steamtrack/deploy/tunnel-url.sh
+#
+# Le tunnel est une connexion SORTANTE : rien a ouvrir sur la box, et le
+# pare-feu de la VM reste ferme en entree.
+
+[Unit]
+Description=steamtrack quick tunnel (Cloudflare)
+After=network-online.target steamtrack-api.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cloudflared
+Group=cloudflared
+# --no-autoupdate : une mise a jour automatique redemarre le processus, donc
+# change l'URL sans prevenir. Les mises a jour restent volontaires.
+ExecStart=/usr/bin/cloudflared tunnel --no-autoupdate --url http://localhost:8080
+Restart=always
+RestartSec=15
+
+# Le journal est la SEULE source de l'URL : cloudflared ne l'ecrit nulle part
+# ailleurs. tunnel-url.sh la relit ici.
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
