@@ -62,7 +62,9 @@
 
         const body = el("div", "apphead-body");
         const title = el("h1", "", app.name || `App ${app.appid}`);
-        title.append(el("span", "appid", String(app.appid)));
+        const badge = extLink(STEAM_APP(app.appid), String(app.appid), "appid");
+        badge.title = "Open on Steam";
+        title.append(badge);
         body.append(title);
 
         const facts = el("div", "facts");
@@ -182,7 +184,10 @@
                     });
                     td.append(link);
                 } else {
-                    td.textContent = text.length > 300 ? text.slice(0, 300) + "..." : text;
+                    const shown = text.length > 300 ? text.slice(0, 300) + "..." : text;
+                    // linkify ne cree un lien que sur un http(s) reel ; sinon
+                    // il rend simplement du texte.
+                    td.append(linkify(shown));
                 }
                 tr.append(td);
                 body.append(tr);
@@ -227,7 +232,10 @@
         const body = el("tbody");
         patches.forEach(p => {
             const tr = el("tr");
-            tr.append(el("td", "mono", p.buildid || "-"));
+            const bc = el("td", "mono");
+            if (p.buildid) bc.append(extLink(STEAMDB_BUILD(p.buildid), p.buildid));
+            else bc.textContent = "-";
+            tr.append(bc);
             tr.append(el("td", "mono", p.change_number ? "#" + p.change_number : "-"));
             const d = el("td", "", ago(p.occurred_at));
             d.title = stamp(p.occurred_at);
@@ -259,10 +267,24 @@
         const body = el("tbody");
         rows.forEach(pk => {
             const tr = el("tr");
-            tr.append(el("td", "mono", String(pk.packageid)));
+            const pc = el("td", "mono");
+            pc.append(extLink(STEAM_SUB(pk.packageid), String(pk.packageid)));
+            tr.append(pc);
             tr.append(el("td", "", pk.name || "-"));
-            tr.append(el("td", "mono", (pk.apps || []).join(", ") || "-"));
-            tr.append(el("td", "mono", (pk.depots || []).join(", ") || "-"));
+            const ac = el("td", "mono");
+            (pk.apps || []).forEach((a, i) => {
+                if (i) ac.append(document.createTextNode(", "));
+                ac.append(extLink(STEAM_APP(a), String(a)));
+            });
+            if (!(pk.apps || []).length) ac.textContent = "-";
+            tr.append(ac);
+            const dc = el("td", "mono");
+            (pk.depots || []).forEach((d, i) => {
+                if (i) dc.append(document.createTextNode(", "));
+                dc.append(extLink(STEAMDB_DEPOT(d), String(d)));
+            });
+            if (!(pk.depots || []).length) dc.textContent = "-";
+            tr.append(dc);
             const flag = el("td");
             flag.append(el("span", "pill", (pk.source || "").toUpperCase()));
             tr.append(flag);
@@ -326,14 +348,17 @@
         const body = el("tbody");
         rows.forEach(d => {
             const tr = el("tr");
-            tr.append(el("td", "mono", String(d.appid)));
+            const idCell = el("td", "mono");
+            idCell.append(extLink(STEAM_APP(d.appid), String(d.appid)));
+            tr.append(idCell);
             const name = el("td");
             if (d.tracked) {
+                // Suivie : on reste sur le site.
                 const link = el("a", "", d.name || `App ${d.appid}`);
                 link.href = `app.html?appid=${d.appid}`;
                 name.append(link);
             } else {
-                name.textContent = d.name || `App ${d.appid}`;
+                name.append(extLink(STEAM_APP(d.appid), d.name || `App ${d.appid}`));
             }
             tr.append(name);
             const flag = el("td");
@@ -449,7 +474,9 @@
         const body = el("tbody");
         depots.depots.forEach(d => {
             const row = el("tr");
-            row.append(el("td", "mono", String(d.depot)));
+            const depotCell = el("td", "mono");
+            depotCell.append(extLink(STEAMDB_DEPOT(d.depot), String(d.depot)));
+            row.append(depotCell);
             row.append(el("td", "", d.name || "-"));
             row.append(el("td", "", (d.config || {}).oslist || (d.config || {}).osarch || "-"));
             row.append(el("td", "mono", d.manifest || "-"));
@@ -494,7 +521,10 @@
             const name = el("td");
             name.append(el("span", "pill" + (b.name === "public" ? " public" : ""), b.name));
             row.append(name);
-            row.append(el("td", "mono", b.buildid || "-"));
+            const buildCell = el("td", "mono");
+            if (b.buildid) buildCell.append(extLink(STEAMDB_BUILD(b.buildid), b.buildid));
+            else buildCell.textContent = "-";
+            row.append(buildCell);
             // Deux formats coexistent : PICS donne un horodatage Unix, une
             // branche reconstituee depuis l'historique garde la date en clair
             // ("8 July 2026 - 10:33:43 UTC"). Sans ce tri, new Date(NaN) levait
@@ -542,7 +572,9 @@
                 (Array.isArray(v) && !v.length)) return;
             const tr = el("tr");
             tr.append(el("th", "", k));
-            tr.append(el("td", "", Array.isArray(v) ? v.join(", ") : String(v)));
+            const td = el("td");
+            td.append(linkify(Array.isArray(v) ? v.join(", ") : String(v)));
+            tr.append(td);
             body.append(tr);
         };
         row("Name", info.name);

@@ -101,7 +101,13 @@ h1 {
 .apphead-body { min-width: 0; flex: 1; }
 .apphead h1 { margin-bottom: 6px; }
 
+/* .appid est aussi un lien vers la fiche Steam : on neutralise le style de
+   lien pour qu'il reste visuellement un badge. */
+a.appid, a.appid:hover { text-decoration: none; }
+a.appid:hover { border-color: var(--link); color: var(--link); }
+
 .appid {
+    display: inline-block;
     font: 12px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     color: var(--dim);
     background: var(--panel);
