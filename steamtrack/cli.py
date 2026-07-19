@@ -232,6 +232,38 @@ def cmd_import(conn, args):
     return 0
 
 
+def cmd_link(conn, args):
+    """Declare une app apparentee que la decouverte automatique ne trouve pas."""
+    appid, _ = pick(args.game)
+    if appid is None:
+        return 1
+    if not conn.execute("SELECT 1 FROM apps WHERE appid = ?", (appid,)).fetchone():
+        print(f"app {appid} n'est pas suivie")
+        return 1
+
+    conn.execute(
+        """INSERT INTO related_links (appid, related_appid, kind, label, added_at)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(appid, related_appid) DO UPDATE SET
+               kind = excluded.kind, label = excluded.label""",
+        (appid, args.related, args.kind, args.label,
+         datetime.now(timezone.utc).isoformat()),
+    )
+    print(f"  {args.related} liee a {appid} [{args.kind}]"
+          + (f' "{args.label}"' if args.label else ""))
+    return 0
+
+
+def cmd_unlink(conn, args):
+    appid, _ = pick(args.game)
+    if appid is None:
+        return 1
+    n = conn.execute("DELETE FROM related_links WHERE appid = ? AND related_appid = ?",
+                     (appid, args.related)).rowcount
+    print(f"  {n} lien supprime")
+    return 0
+
+
 def cmd_reclean(conn, args):
     from . import news
 
@@ -396,6 +428,19 @@ def main():
     p.add_argument("--limit", type=int, default=10)
     p.add_argument("--kind")
     p.set_defaults(func=cmd_show)
+
+    p = sub.add_parser("link", help="declarer une app apparentee (alpha fermee, playtest...)")
+    p.add_argument("game", help="appid ou nom du jeu")
+    p.add_argument("related", type=int, help="appid de l'app apparentee")
+    p.add_argument("--kind", default="related",
+                   help="demo, playtest, alpha, beta, dlc, soundtrack...")
+    p.add_argument("--label", help="nom a afficher (une app a jeton n'en publie aucun)")
+    p.set_defaults(func=cmd_link)
+
+    p = sub.add_parser("unlink", help="retirer une app apparentee declaree")
+    p.add_argument("game")
+    p.add_argument("related", type=int)
+    p.set_defaults(func=cmd_unlink)
 
     p = sub.add_parser("import", help="importer un historique SteamDB (page History en HTML)")
     p.add_argument("game", help="appid ou nom du jeu")

@@ -421,12 +421,35 @@ def app_related(appid: int = APPID, *, conn=Depends(get_conn), who=Depends(calle
     name = common.get("name") or details.get("name")
     siblings = probes.related_by_name(name, appid)
 
+    # Enfants deja suivis : leur snapshot porte parent=<appid>, donc le lien
+    # se retrouve sans index global -- mais seulement pour ce qu'on suit deja.
+    children = []
+    for other in known:
+        if other == appid:
+            continue
+        snap = db.get_snapshot(conn, other) or {}
+        if str((snap.get("common") or {}).get("parent") or "") == str(appid):
+            children.append({"appid": other, "name": known[other],
+                             "kind": ((snap.get("common") or {}).get("type") or "related").lower(),
+                             "tracked": True, "source": "pics"})
+
+    manual = [
+        {"appid": r["related_appid"], "name": r["label"] or known.get(r["related_appid"]),
+         "kind": r["kind"], "tracked": r["related_appid"] in known, "source": "manual"}
+        for r in conn.execute(
+            "SELECT related_appid, kind, label FROM related_links WHERE appid = ? "
+            "ORDER BY related_appid", (appid,))
+    ]
+
+    seen = {c["appid"] for c in children} | {m["appid"] for m in manual}
     return {
         "appid": appid,
         "parent": common.get("parent") or (details.get("fullgame") or {}).get("appid"),
         "dlc": [{"appid": d, "name": known.get(d), "tracked": d in known,
                  "kind": "dlc"} for d in dlc_ids],
-        "siblings": [dict(s, tracked=s["appid"] in known) for s in siblings],
+        "siblings": ([dict(s, tracked=s["appid"] in known, source="store")
+                      for s in siblings if s["appid"] not in seen]
+                     + children + manual),
     }
 
 

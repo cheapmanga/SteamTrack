@@ -53,6 +53,24 @@ CREATE INDEX IF NOT EXISTS idx_changes_app_time ON changes (appid, occurred_at D
 CREATE INDEX IF NOT EXISTS idx_changes_time     ON changes (occurred_at DESC);
 CREATE INDEX IF NOT EXISTS idx_changes_kind     ON changes (kind, occurred_at DESC);
 
+-- Apps apparentees declarees a la main.
+--
+-- PICS place le lien dans l'ENFANT (une demo porte parent=<jeu>), jamais dans
+-- le parent : retrouver les enfants d'un jeu demande donc d'avoir indexe tout
+-- Steam, ce que fait SteamDB et pas nous. Et une app a jeton -- alpha fermee,
+-- playtest sur invitation -- ne publie meme pas son nom.
+--
+-- D'ou cette table : ce que la decouverte automatique ne peut pas trouver,
+-- on le declare.
+CREATE TABLE IF NOT EXISTS related_links (
+    appid         INTEGER NOT NULL REFERENCES apps(appid) ON DELETE CASCADE,
+    related_appid INTEGER NOT NULL,
+    kind          TEXT    NOT NULL DEFAULT 'related',
+    label         TEXT,
+    added_at      TEXT    NOT NULL,
+    PRIMARY KEY (appid, related_appid)
+);
+
 -- Frequentation, releve periodiquement. C'est la donnee signature de SteamDB,
 -- et la seule qui ne se rattrape pas : elle n'existe que si on l'a mesuree.
 CREATE TABLE IF NOT EXISTS player_counts (
