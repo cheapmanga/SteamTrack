@@ -1,39 +1,38 @@
 # steamtrack
 
-Suivi des changements Steam pour une liste de jeux choisis, avec API.
+Steam change tracking for a chosen list of games, with an API.
 
-Meme principe que SteamDB : un client Steam en **login anonyme** ecoute le flux
-PICS, qui annonce en continu quels apps viennent d'etre modifies. Pour les jeux
-suivis, l'appinfo est recharge et compare au precedent ; la difference devient un
-evenement consultable.
+Same principle as SteamDB: a Steam client using **anonymous login** listens to the
+PICS stream, which continuously announces which apps have just been modified. For
+tracked games, the appinfo is reloaded and compared against the previous one; the
+difference becomes a browsable event.
 
-Aucun compte Steam n'est necessaire.
+No Steam account required.
 
-## Ce que le service capte
+## What the service captures
 
-| Donnee | Disponible |
+| Data | Available |
 |---|---|
-| Builds, depots, branches (y compris branches cachees) | oui |
-| Metadonnees store, tags, langues, assets | oui |
-| Annonces et patch notes | oui, ~200 dernieres |
-| Changements **anterieurs** a l'ajout du jeu | **non** |
+| Builds, depots, branches (including hidden branches) | yes |
+| Store metadata, tags, languages, assets | yes |
+| Announcements and patch notes | yes, last ~200 |
+| Changes **predating** the game being added | **no** |
 
-### La limite a connaitre
+### The limitation to be aware of
 
-**Un jeu ajoute commence son historique le jour de son ajout.** Steam ne
-conserve pas les changelists passes : PICS ne donne que l'etat courant et la
-suite. Rien ne permet de reconstituer automatiquement des annees d'historique.
-Seules les annonces sont partiellement rattrapables.
+**A game starts its history on the day it is added.** Steam does not keep past
+changelists: PICS only gives you the current state and everything after it.
+Nothing lets you automatically rebuild years of history. Only announcements can
+be partially backfilled.
 
-Pour un historique anterieur, il faut importer un export HTML de SteamDB
-(page History enregistree depuis le navigateur) -- Cloudflare y bloque tout
-acces automatise.
+For history predating that, you have to import a SteamDB HTML export (the History
+page saved from your browser) -- Cloudflare blocks all automated access there.
 
-### Apps a jeton
+### Token-gated apps
 
-Certains apps, typiquement les jeux **non encore sortis**, ne publient pas leur
-section `depots` (`_missing_token`). Leurs builds sont detectees via le
-changenumber, mais sans le `buildid`. La CLI le signale a l'ajout.
+Some apps, typically **unreleased** games, do not publish their `depots` section
+(`_missing_token`). Their builds are detected through the changenumber, but
+without the `buildid`. The CLI warns about this when the game is added.
 
 ## Installation
 
@@ -45,7 +44,7 @@ python3 -m venv .venv
 ## Usage
 
 ```bash
-# suivre un jeu, par appid ou par nom (avec desambiguisation)
+# track a game, by appid or by name (with disambiguation)
 python3 -m steamtrack.cli add 730
 python3 -m steamtrack.cli add "Elden Ring"
 
@@ -53,16 +52,16 @@ python3 -m steamtrack.cli list
 python3 -m steamtrack.cli show 730 --limit 5
 python3 -m steamtrack.cli show 730 --kind build
 
-# retirer un jeu ET tout son historique (confirmation demandee)
+# remove a game AND its entire history (asks for confirmation)
 python3 -m steamtrack.cli remove 730
 
-# cles d'API : quota horaire, ou illimite si --quota est omis
+# API keys: hourly quota, or unlimited if --quota is omitted
 python3 -m steamtrack.cli key add "bot discord" --quota 1000
 python3 -m steamtrack.cli key add "moi"
 python3 -m steamtrack.cli key list
 ```
 
-Le collecteur tourne en continu :
+The collector runs continuously:
 
 ```bash
 python3 -m steamtrack.collector
@@ -74,32 +73,32 @@ python3 -m steamtrack.collector
 uvicorn steamtrack.api:app --host 0.0.0.0 --port 8080
 ```
 
-Documentation interactive sur `/docs`, schema OpenAPI sur `/openapi.json`.
-CORS ouvert : l'API est appelable depuis n'importe quel domaine.
+Interactive documentation at `/docs`, OpenAPI schema at `/openapi.json`.
+CORS is wide open: the API can be called from any domain.
 
 | Route | Description |
 |---|---|
-| `GET /health` | etat du service et curseur du collecteur |
-| `GET /v1/apps` | jeux suivis |
-| `GET /v1/apps/{appid}` | detail, derniere build connue |
-| `GET /v1/apps/{appid}/changes` | historique (`kind`, `since`, `limit`, `offset`) |
-| `GET /v1/apps/{appid}/builds` | raccourci builds |
-| `GET /v1/changes` | flux global (`since` pour le suivi incremental) |
-| `GET /v1/apps/{appid}/players` | frequentation relevee, avec pic et moyenne |
-| `GET /v1/apps/{appid}/prices` | historique des prix |
-| `GET /v1/apps/{appid}/depots` | depots et branches |
-| `GET /v1/apps/{appid}/info` | fiche store |
-| `GET /v1/apps/{appid}/sections` | sections detaillees de la fiche store |
-| `GET /v1/apps/{appid}/related` | DLC, demos et applications liees |
-| `GET /v1/apps/{appid}/patches` | suite des builds publiees |
-| `GET /v1/search?q=` | recherche parmi les jeux suivis |
-| `POST /v1/apps?appid=` | suivre un jeu — **cle admin** |
-| `DELETE /v1/apps/{appid}` | retirer un jeu et son historique — **cle admin** |
+| `GET /health` | service status and collector cursor |
+| `GET /v1/apps` | tracked games |
+| `GET /v1/apps/{appid}` | details, latest known build |
+| `GET /v1/apps/{appid}/changes` | history (`kind`, `since`, `limit`, `offset`) |
+| `GET /v1/apps/{appid}/builds` | builds shortcut |
+| `GET /v1/changes` | global feed (`since` for incremental polling) |
+| `GET /v1/apps/{appid}/players` | recorded player counts, with peak and average |
+| `GET /v1/apps/{appid}/prices` | price history |
+| `GET /v1/apps/{appid}/depots` | depots and branches |
+| `GET /v1/apps/{appid}/info` | store page data |
+| `GET /v1/apps/{appid}/sections` | detailed sections of the store page |
+| `GET /v1/apps/{appid}/related` | DLC, demos and related applications |
+| `GET /v1/apps/{appid}/patches` | sequence of published builds |
+| `GET /v1/search?q=` | search among tracked games |
+| `POST /v1/apps?appid=` | track a game — **admin key** |
+| `DELETE /v1/apps/{appid}` | remove a game and its history — **admin key** |
 
-Authentification par l'en-tete `X-API-Key`. Sans cle, un quota anonyme reduit
-(600 requetes/heure et par adresse IP) permet d'essayer l'API. Les reponses portent
-`X-RateLimit-Limit`, `X-RateLimit-Remaining` et `X-RateLimit-Reset`, y compris
-sur un refus 429.
+Authentication uses the `X-API-Key` header. Without a key, a reduced anonymous
+quota (600 requests/hour per IP address) lets you try the API out. Responses carry
+`X-RateLimit-Limit`, `X-RateLimit-Remaining` and `X-RateLimit-Reset`, including on
+a 429 rejection.
 
 ```bash
 curl localhost:8080/v1/apps
@@ -107,210 +106,207 @@ curl -H "X-API-Key: st_..." "localhost:8080/v1/apps/730/changes?kind=build&limit
 curl -X POST -H "X-API-Key: st_admin..." "localhost:8080/v1/apps?appid=440"
 ```
 
-### Deux processus distincts
+### Two separate processes
 
-L'API **ne joint jamais Steam**. Le client Steam s'appuie sur gevent, dont le
-monkey patching casse la boucle asyncio du serveur ; les faire cohabiter fige
-le processus. `POST /v1/apps` enregistre donc l'intention et repond
-immediatement, puis le collecteur -- seul autorise a parler a Steam -- recupere
-l'etat initial a son passage suivant.
+The API **never talks to Steam**. The Steam client relies on gevent, whose monkey
+patching breaks the server's asyncio loop; running both in the same process
+freezes it. So `POST /v1/apps` records the intent and answers immediately, then
+the collector -- the only thing allowed to talk to Steam -- fetches the initial
+state on its next pass.
 
-## Interface web
+## Web interface
 
-Servie a la racine par le meme processus que l'API :
+Served at the root by the same process as the API:
 
-| Page | Contenu |
+| Page | Contents |
 |---|---|
-| `/` | jeux suivis, vignettes, volume et date du dernier changement |
-| `/app.html?appid=730` | 12 onglets : Store info, Charts, Patches, Metadata, Packages, Depots, Branches, Configuration, Cloud saves, Screenshots, Related apps, Update history |
-| `/about.html` | ce qu'est le service, la limite d'historique, exemples d'API |
-| `/changes.html` | flux recent, tous jeux confondus |
+| `/` | tracked games, thumbnails, volume and date of the last change |
+| `/app.html?appid=730` | 12 tabs: Store info, Charts, Patches, Metadata, Packages, Depots, Branches, Configuration, Cloud saves, Screenshots, Related apps, Update history |
+| `/about.html` | what the service is, the history limitation, API examples |
+| `/changes.html` | recent feed, across all games |
 
-Apparence calquee sur SteamDB : fond sombre, typographie dense, panneaux a
-liseres, differences colorees. Les assets se previsualisent au survol et se
-telechargent au clic.
+The look is modelled on SteamDB: dark background, dense typography, bordered
+panels, colored diffs. Assets preview on hover and download on click.
 
-L'API vit sous `/v1`, `/health`, `/api` et `/docs` ; le reste est servi par
-l'interface. Le montage statique est enregistre en DERNIER dans `api.py` :
-monte sur `/`, il capturerait sinon toutes les routes declarees apres lui.
+The API lives under `/v1`, `/health`, `/api` and `/docs`; everything else is
+served by the interface. The static mount is registered LAST in `api.py`: mounted
+on `/`, it would otherwise swallow every route declared after it.
 
-## Deploiement
+## Deployment
 
-Voir `deploy/steamtrack.service` pour une unite systemd. La base vit dans
-`data/steamtrack.db` (SQLite, mode WAL : le collecteur ecrit pendant que l'API
-lit).
+See `deploy/steamtrack.service` for a systemd unit. The database lives in
+`data/steamtrack.db` (SQLite, WAL mode: the collector writes while the API reads).
 
-Deux services, deux roles :
+Two services, two roles:
 
-| Unite | Role |
+| Unit | Role |
 |---|---|
-| `steamtrack.service` | collecteur PICS, **seul gros ecrivain** de la base |
-| `steamtrack-api.service` | uvicorn, 3 workers, lit la base et sert `web/` |
+| `steamtrack.service` | PICS collector, **the only heavy writer** to the database |
+| `steamtrack-api.service` | uvicorn, 3 workers, reads the database and serves `web/` |
 
-L'API tourne en **3 workers** sur 2 vCPU : les endpoints sont synchrones et
-passent l'essentiel de leur temps bloques sur SQLite, donc 2 workers occupent
-les 2 coeurs et le 3e absorbe les attentes disque, sans excedent pour 2 Go de
-RAM. C'est sans risque : WAL admet plusieurs lecteurs simultanes, chaque requete
-ouvre sa propre connexion, et les compteurs de quota vivent dans la table
-`api_usage` -- donc partages entre workers, et non par processus.
+The API runs with **3 workers** on 2 vCPUs: the endpoints are synchronous and
+spend most of their time blocked on SQLite, so 2 workers keep both cores busy and
+the 3rd absorbs disk waits, without overshooting 2 GB of RAM. This is safe: WAL
+allows several concurrent readers, each request opens its own connection, and the
+quota counters live in the `api_usage` table -- so they are shared across workers
+rather than per-process.
 
-## Mise en ligne publique
+## Going public
 
-Ordre a respecter. Les etapes marquees **[HUMAIN]** ne peuvent pas etre
-scriptees : elles demandent un navigateur, un compte, ou une decision.
+Follow this order. Steps marked **[HUMAN]** cannot be scripted: they require a
+browser, an account, or a decision.
 
-### 1. Verifier les quotas AVANT d'ouvrir
+### 1. Check the quotas BEFORE opening up
 
-C'est le point le plus important, et le seul qui ne se rattrape pas apres coup.
+This is the most important point, and the only one you cannot fix after the fact.
 
 ```bash
-grep ANON_QUOTA steamtrack/auth.py     # doit etre un entier, jamais None
+grep ANON_QUOTA steamtrack/auth.py     # must be an integer, never None
 ```
 
-`ANON_QUOTA` (dans `steamtrack/auth.py`) plafonne les visiteurs sans cle.
-`None` signifierait illimite : ouvert au public, cela laisse n'importe qui
-saturer la VM. Valeur actuelle : `600` requetes/heure et par adresse IP, soit
-environ 75 fiches de jeu par heure et par visiteur.
+`ANON_QUOTA` (in `steamtrack/auth.py`) caps visitors without a key. `None` would
+mean unlimited: once public, that lets anyone saturate the VM. Current value:
+`600` requests/hour per IP address, roughly 75 game pages per hour per visitor.
 
-Se creer une cle illimitee pour garder un acces sans limite, avant l'ouverture :
+Create yourself an unlimited key to keep unrestricted access, before opening up:
 
 ```bash
-steamtrack key add perso --admin        # --quota omis = illimite
-# `perso` est positionnel (pas --label). Sans --admin, la cle est en lecture
-# seule : POST et DELETE /v1/apps repondraient 403.
+steamtrack key add perso --admin        # --quota omitted = unlimited
+# `perso` is positional (not --label). Without --admin, the key is read-only:
+# POST and DELETE /v1/apps would answer 403.
 ```
 
-### 2. Sauvegardes en place avant le trafic
+### 2. Backups in place before any traffic
 
-Une base sans sauvegarde ne doit pas etre exposee.
+A database without backups should not be exposed.
 
 ```bash
 sudo install -m 755 deploy/backup.sh /opt/steamtrack/deploy/backup.sh
-sudo -u steamtrack /opt/steamtrack/deploy/backup.sh   # premier passage manuel
+sudo -u steamtrack /opt/steamtrack/deploy/backup.sh   # first manual run
 ```
 
-Puis en cron quotidien (rotation 7 jours, deja geree par le script) :
+Then as a daily cron job (7-day rotation, already handled by the script):
 
 ```
 15 4 * * *  steamtrack  /opt/steamtrack/deploy/backup.sh >> /var/log/steamtrack-backup.log 2>&1
 ```
 
-Le script utilise `.backup` de sqlite3, **pas** un `cp` : copier a chaud un
-fichier en WAL donne une base au mieux en retard, au pire corrompue. Chaque
-sauvegarde est relue (`PRAGMA integrity_check`) avant d'etre publiee sous son
-nom definitif.
+The script uses sqlite3's `.backup`, **not** a `cp`: copying a WAL-mode file
+while it is live gives you a database that is stale at best and corrupt at worst.
+Every backup is read back (`PRAGMA integrity_check`) before being published under
+its final name.
 
-### 3. API en plusieurs workers
+### 3. API with multiple workers
 
 ```bash
 sudo cp deploy/steamtrack-api.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl restart steamtrack-api
 ```
 
-`--proxy-headers --forwarded-allow-ips 127.0.0.1` est **indispensable** derriere
-le tunnel : sans ces options uvicorn ignore `X-Forwarded-For`, toutes les
-requetes semblent venir de 127.0.0.1, et tous les visiteurs anonymes partagent
-un seul seau de quota -- le premier gros consommateur bloque alors tout le
-monde. Ne jamais mettre `*` : cela permettrait a un client d'usurper son IP, et
-donc son quota, avec un en-tete forge.
+`--proxy-headers --forwarded-allow-ips 127.0.0.1` is **mandatory** behind the
+tunnel: without those options uvicorn ignores `X-Forwarded-For`, every request
+looks like it comes from 127.0.0.1, and all anonymous visitors share a single
+quota bucket -- the first heavy user then blocks everyone else. Never use `*`:
+that would let a client spoof its IP, and therefore its quota, with a forged
+header.
 
-### 4. Pare-feu
+### 4. Firewall
 
-A lancer **avant** d'ouvrir le tunnel.
+Run this **before** opening the tunnel.
 
 ```bash
-sudo ./deploy/firewall.sh              # defaut : le LAN declare dans le script
-sudo ./deploy/firewall.sh 10.0.0.0/24  # autre LAN
+sudo ./deploy/firewall.sh              # default: the LAN declared in the script
+sudo ./deploy/firewall.sh 10.0.0.0/24  # another LAN
 ```
 
-Idempotent, relancable. Il pose la regle SSH **avant** `ufw enable` : l'ordre
-inverse couperait la session SSH en cours et rendrait la VM injoignable hors
-console Proxmox. Garder malgre tout une seconde session SSH ouverte pendant
-l'operation.
+Idempotent, safe to re-run. It adds the SSH rule **before** `ufw enable`: the
+reverse order would cut the current SSH session and make the VM unreachable
+outside the Proxmox console. Keep a second SSH session open anyway during the
+operation.
 
-Le port 8080 reste limite au LAN. Le tunnel est une connexion **sortante** :
-il n'a besoin d'aucun port entrant, et rien n'est a ouvrir sur la box.
+Port 8080 stays restricted to the LAN. The tunnel is an **outbound** connection:
+it needs no inbound port, and nothing has to be opened on the router.
 
-### 5. Tunnel Cloudflare **[HUMAIN]**
+### 5. Cloudflare tunnel **[HUMAN]**
 
-Procedure detaillee en tete de `deploy/cloudflared.service`. Resume :
+Detailed procedure at the top of `deploy/cloudflared.service`. Summary:
 
 ```bash
-cloudflared tunnel login                 # [HUMAIN] navigateur + compte Cloudflare
+cloudflared tunnel login                 # [HUMAN] browser + Cloudflare account
 cloudflared tunnel create steamtrack
-cloudflared tunnel route dns steamtrack steamtrack.example.com   # [HUMAIN] domaine
+cloudflared tunnel route dns steamtrack steamtrack.example.com   # [HUMAN] domain
 ```
 
-`tunnel login` ouvre une URL a valider dans un navigateur et suppose un compte
-Cloudflare possedant deja un domaine : aucun agent ne peut le faire a votre
-place. Le fichier `<UUID>.json` produit est un secret (`chmod 600`).
+`tunnel login` opens a URL you have to approve in a browser and assumes a
+Cloudflare account that already owns a domain: no agent can do it for you. The
+resulting `<UUID>.json` file is a secret (`chmod 600`).
 
-Puis installer l'unite :
+Then install the unit:
 
 ```bash
 sudo cp deploy/cloudflared.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now cloudflared
 ```
 
-### 6. Verifications avant d'annoncer l'URL
+### 6. Checks before announcing the URL
 
-| Verification | Attendu |
+| Check | Expected |
 |---|---|
 | `curl https://steamtrack.example.com/health` | `{"status":"ok",...}` |
-| `curl http://<ip-lan-de-la-vm>:8080/health` depuis le LAN | repond |
-| 8080 depuis l'exterieur | **injoignable** |
+| `curl http://<vm-lan-ip>:8080/health` from the LAN | answers |
+| 8080 from outside | **unreachable** |
 | `curl -sD- -o/dev/null https://.../v1/apps \| grep -i ratelimit` | `x-ratelimit-limit: 600` |
-| Deux requetes publiques d'IP differentes | compteurs **independants** |
-| `sudo ufw status verbose` | `deny (incoming)`, 22 et 8080 limites au LAN |
-| `systemctl status steamtrack steamtrack-api cloudflared` | les trois `active` |
-| Sauvegarde du jour presente dans `/opt/steamtrack/backups` | oui |
+| Two public requests from different IPs | **independent** counters |
+| `sudo ufw status verbose` | `deny (incoming)`, 22 and 8080 restricted to the LAN |
+| `systemctl status steamtrack steamtrack-api cloudflared` | all three `active` |
+| Today's backup present in `/opt/steamtrack/backups` | yes |
 
-Si les compteurs de deux IP differentes bougent ensemble, `--proxy-headers`
-n'est pas actif : reprendre l'etape 3 avant d'ouvrir au public.
+If the counters for two different IPs move together, `--proxy-headers` is not
+active: redo step 3 before opening to the public.
 
-Mot de passe root de la VM change, et cle SSH plutot que mot de passe, avant
-toute exposition.
+Change the VM's root password, and use an SSH key rather than a password, before
+any exposure.
 
-## Tunnel public
+## Public tunnel
 
-Deux unites, selon le besoin :
+Two units, depending on what you need:
 
-| Unite | Adresse | Prerequis |
+| Unit | Address | Requirements |
 |---|---|---|
-| `cloudflared-quick.service` | aleatoire en trycloudflare.com, **change a chaque redemarrage** | aucun |
-| `cloudflared.service` | stable, sur votre domaine | `cloudflared tunnel login` : navigateur + compte Cloudflare |
+| `cloudflared-quick.service` | random one on trycloudflare.com, **changes on every restart** | none |
+| `cloudflared.service` | stable, on your own domain | `cloudflared tunnel login`: browser + Cloudflare account |
 
-Relever l'adresse courante du quick tunnel :
+Read the quick tunnel's current address:
 
 ```bash
 /opt/steamtrack/deploy/tunnel-url.sh
 ```
 
-Le tunnel est une connexion sortante : rien a ouvrir sur la box, le pare-feu
-reste ferme en entree.
+The tunnel is an outbound connection: nothing to open on the router, the firewall
+stays closed to inbound traffic.
 
 ## Architecture
 
 ```
 steamtrack/
-  schema.sql      tables : apps, snapshots, changes, api_keys, state
-  db.py           acces base
-  diff.py         comparaison de deux appinfo -> arbre de differences
-  news.py         annonces via ISteamNews
-  collector.py    daemon : flux PICS -> diff -> base
-  cli.py          ajout / suppression / consultation / cles
+  schema.sql      tables: apps, snapshots, changes, api_keys, state
+  db.py           database access
+  diff.py         comparison of two appinfo -> tree of differences
+  news.py         announcements via ISteamNews
+  collector.py    daemon: PICS stream -> diff -> database
+  cli.py          add / remove / browse / keys
 ```
 
-Le format des evenements est un arbre de segments types (`text`, `field`,
-`del`, `ins`, `muted`), directement rendu par l'interface et expose tel quel par
-l'API. Les assets y portent leur URL, ce qui permet apercu et telechargement.
+The event format is a tree of typed segments (`text`, `field`, `del`, `ins`,
+`muted`), rendered directly by the interface and exposed as-is by the API. Assets
+carry their URL, which is what makes preview and download possible.
 
-## Etat
+## Status
 
-- [x] Collecteur PICS, diff, base
-- [x] CLI : ajouter / retirer / lister / consulter
-- [x] Cles d'API en base
-- [x] API HTTP (cles, quotas, OpenAPI)
-- [x] Interface web
-- [x] Frequentation, prix, depots, branches, fiche store
-- [x] Rafraichissement automatique des pages
+- [x] PICS collector, diff, database
+- [x] CLI: add / remove / list / browse
+- [x] API keys in the database
+- [x] HTTP API (keys, quotas, OpenAPI)
+- [x] Web interface
+- [x] Player counts, prices, depots, branches, store page
+- [x] Automatic page refresh

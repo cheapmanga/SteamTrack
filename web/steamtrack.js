@@ -472,12 +472,7 @@ function showViewerItem() {
         video.controls = true;
         video.autoplay = true;
         video.poster = item.thumb || "";
-        // Repli sur la version 480p si la source pleine definition manque :
-        // certaines bandes-annonces anciennes n'ont pas de movie_max.
-        video.addEventListener("error", () => {
-            if (item.fallback && video.src !== item.fallback) video.src = item.fallback;
-        }, { once: true });
-        video.src = item.src;
+        playVideo(video, item);
         stage.append(video);
     } else {
         const img = document.createElement("img");
@@ -538,4 +533,56 @@ function collectAssets(appid, obj, out = [], path = "") {
         if (url) out.push({ kind: "image", src: url, thumb: url, name: path });
     }
     return out;
+}
+
+
+// ----- Lecture des bandes-annonces -----
+// Steam ne publie plus de mp4 pour les videos recentes : seulement du HLS
+// segmente, que ni Chrome ni Firefox ne lisent nativement (Safari, si). D'ou
+// le message "No video with supported format and MIME type found" sur ces
+// bandes-annonces. hls.js est charge a la demande, uniquement dans ce cas.
+let hlsReady = null;
+
+function loadHls() {
+    if (hlsReady) return hlsReady;
+    hlsReady = new Promise((resolve, reject) => {
+        const tag = document.createElement("script");
+        tag.src = "hls.light.min.js";
+        tag.onload = resolve;
+        tag.onerror = () => reject(new Error("hls.js introuvable"));
+        document.head.append(tag);
+    });
+    return hlsReady;
+}
+
+async function playVideo(video, item) {
+    // Un fichier direct quand il existe : plus simple et plus leger.
+    if (item.src) {
+        video.addEventListener("error", () => {
+            if (item.fallback && video.src !== item.fallback) video.src = item.fallback;
+        }, { once: true });
+        video.src = item.src;
+        return;
+    }
+    if (!item.hls) return;
+
+    // Safari lit le HLS sans aide : inutile de charger la bibliotheque.
+    if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        video.src = item.hls;
+        return;
+    }
+
+    try {
+        await loadHls();
+        if (!window.Hls || !window.Hls.isSupported()) throw new Error("non supporte");
+        const hls = new window.Hls({ capLevelToPlayerSize: true });
+        hls.loadSource(item.hls);
+        hls.attachMedia(video);
+        // Libere le lecteur avec la visionneuse : sans cela, il continue de
+        // telecharger des segments en arriere-plan.
+        video.addEventListener("emptied", () => hls.destroy(), { once: true });
+    } catch {
+        video.replaceWith(el("p", "empty err",
+            "This trailer is only published as an adaptive stream, which this browser cannot play."));
+    }
 }
