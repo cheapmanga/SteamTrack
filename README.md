@@ -271,6 +271,24 @@ n'est pas actif : reprendre l'etape 3 avant d'ouvrir au public.
 Mot de passe root de la VM change, et cle SSH plutot que mot de passe, avant
 toute exposition.
 
+## Tunnel public
+
+Deux unites, selon le besoin :
+
+| Unite | Adresse | Prerequis |
+|---|---|---|
+| `cloudflared-quick.service` | aleatoire en trycloudflare.com, **change a chaque redemarrage** | aucun |
+| `cloudflared.service` | stable, sur votre domaine | `cloudflared tunnel login` : navigateur + compte Cloudflare |
+
+Relever l'adresse courante du quick tunnel :
+
+```bash
+/opt/steamtrack/deploy/tunnel-url.sh
+```
+
+Le tunnel est une connexion sortante : rien a ouvrir sur la box, le pare-feu
+reste ferme en entree.
+
 ## Architecture
 
 ```
