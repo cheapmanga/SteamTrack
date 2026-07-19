@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>steamtrack — gateway</title>
+<style>
+/* Passerelle : adresse d'entree stable vers un tunnel dont l'URL change.
+   Volontairement autonome (un seul fichier, aucune dependance) : elle doit
+   fonctionner meme quand tout le reste est injoignable. */
+:root {
+    --bg: #16191d; --panel: #21262c; --border: #32373d;
+    --text: #dfe3e6; --muted: #8f98a0; --dim: #6b7379;
+    --link: #67c1f5; --ok: #6ec06e; --bad: #d05a5a; --warn: #e0a458;
+}
+* { box-sizing: border-box; }
+body {
+    margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+    font: 15px/1.6 Inter, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+.card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+    padding: 30px; max-width: 560px; width: 100%;
+}
+h1 { margin: 0 0 4px; font-size: 22px; font-weight: 600; }
+h1 span { color: var(--link); }
+.sub { color: var(--muted); font-size: 13.5px; margin: 0 0 22px; }
+.state {
+    display: flex; align-items: center; gap: 9px;
+    font-size: 13.5px; margin-bottom: 16px;
+}
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--dim); flex-shrink: 0; }
+.dot.ok { background: var(--ok); box-shadow: 0 0 8px rgba(110,192,110,.5); }
+.dot.bad { background: var(--bad); }
+.dot.wait { background: var(--warn); animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+.go {
+    display: block; text-align: center; background: #2c3a47;
+    border: 1px solid var(--link); color: #fff; border-radius: 4px;
+    padding: 13px; font-size: 15px; font-weight: 600; text-decoration: none;
+    margin-bottom: 12px;
+}
+.go:hover { background: #35485a; }
+.go.off { opacity: .4; pointer-events: none; border-color: var(--border); }
+.addr {
+    font: 12px/1.5 ui-monospace, Menlo, Consolas, monospace;
+    color: var(--dim); word-break: break-all; margin-bottom: 18px;
+}
+.row { display: flex; gap: 10px; align-items: center; }
+button {
+    background: none; border: 1px solid var(--border); color: var(--muted);
+    border-radius: 4px; padding: 7px 13px; font: inherit; font-size: 13px;
+    cursor: pointer;
+}
+button:hover { color: #fff; border-color: var(--link); }
+button:disabled { opacity: .45; cursor: default; }
+.note {
+    margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--border);
+    color: var(--dim); font-size: 12.5px;
+}
+.note code { background: #1a1e23; padding: 1px 5px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<div class="card">
+    <h1>steam<span>track</span></h1>
+    <p class="sub">Stable entry point. The site runs behind a tunnel whose address changes; this page always points at the current one.</p>
+
+    <div class="state"><span class="dot wait" id="dot"></span><span id="msg">Checking...</span></div>
+
+    <a class="go off" id="go" href="#">Open steamtrack</a>
+    <div class="addr" id="addr">—</div>
+
+    <div class="row">
+        <button id="check">Check now</button>
+        <span class="addr" style="margin:0" id="last"></span>
+    </div>
+
+    <div class="note">
+        The tunnel address is published by the server to
+        <code id="src">GitHub</code> whenever it changes. This page re-reads it
+        automatically, and verifies the site actually answers before sending you there.
+    </div>
+</div>
+
+<script>
+// Source de verite : un fichier publie par la VM a chaque changement d'adresse.
+// Lu sur raw.githubusercontent, qui autorise la lecture depuis un navigateur.
+const SOURCE = "https://raw.githubusercontent.com/cheapmanga/SteamTrack/main/tunnel.json";
+const EVERY_MS = 600000;          // 10 minutes
+
+const dot = document.getElementById("dot");
+const msg = document.getElementById("msg");
+const go = document.getElementById("go");
+const addr = document.getElementById("addr");
+const last = document.getElementById("last");
+const btn = document.getElementById("check");
+
+let current = null;
+
+function setState(kind, text) {
+    dot.className = "dot " + kind;
+    msg.textContent = text;
+}
+
+// bust : force GitHub a resservir le fichier malgre son cache de 5 minutes.
+async function readSource(bust) {
+    const url = SOURCE + (bust ? "?t=" + Date.now() : "");
+    const resp = await fetch(url, { cache: bust ? "reload" : "default" });
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    return resp.json();
+}
+
+// On ne se contente pas de lire l'adresse : on verifie qu'elle repond. Une
+// adresse publiee mais morte (VM redemarree il y a deux minutes) serait pire
+// qu'un message d'attente honnete.
+async function alive(base) {
+    try {
+        const resp = await fetch(base.replace(/\/$/, "") + "/health",
+                                { cache: "no-store", signal: AbortSignal.timeout(8000) });
+        return resp.ok;
+    } catch {
+        return false;
+    }
+}
+
+async function refresh(manual) {
+    btn.disabled = true;
+    setState("wait", manual ? "Checking..." : "Checking the current address...");
+
+    try {
+        let data = await readSource(manual);
+        let url = (data && data.url) || null;
+
+        if (url && !(await alive(url))) {
+            // L'adresse connue ne repond plus : peut-etre le fichier lu
+            // venait-il du cache. On force une relecture avant d'abandonner.
+            setState("wait", "Address looks stale, re-reading...");
+            data = await readSource(true);
+            url = (data && data.url) || null;
+        }
+
+        if (!url) {
+            setState("bad", "No address published yet.");
+            go.classList.add("off");
+            addr.textContent = "—";
+            return;
+        }
+
+        current = url;
+        addr.textContent = url;
+        go.href = url;
+
+        if (await alive(url)) {
+            setState("ok", "Online");
+            go.classList.remove("off");
+        } else {
+            // Cas courant apres un redemarrage : la VM n'a pas encore publie sa
+            // nouvelle adresse. On le dit plutot que d'envoyer sur un lien mort.
+            setState("bad", "The site is not answering. It may have just restarted — try again in a few minutes.");
+            go.classList.add("off");
+        }
+
+        if (data.updated) {
+            last.textContent = "published " + new Date(data.updated).toLocaleString();
+        }
+    } catch (err) {
+        setState("bad", "Could not read the published address: " + err.message);
+        go.classList.add("off");
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+btn.addEventListener("click", () => refresh(true));
+setInterval(() => refresh(false), EVERY_MS);
+refresh(false);
+</script>
+</body>
+</html>

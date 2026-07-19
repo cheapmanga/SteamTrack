@@ -1,0 +1,17 @@
+# Verifie l'adresse toutes les 2 minutes.
+#
+# 2 et non 10 : l'adresse ne change qu'au redemarrage du tunnel, donc le script
+# ne publie presque jamais. Le cout d'un passage est nul (lecture d'un journal),
+# alors que chaque minute d'attente est une minute ou la passerelle pointe vers
+# une adresse morte. S'y ajoute le cache de 5 minutes de raw.githubusercontent,
+# qu'on ne maitrise pas : autant ne pas y ajouter le notre.
+[Unit]
+Description=Verifie periodiquement l'adresse du tunnel steamtrack
+
+[Timer]
+OnBootSec=90s
+OnUnitActiveSec=2min
+AccuracySec=15s
+
+[Install]
+WantedBy=timers.target
