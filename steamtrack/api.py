@@ -415,10 +415,18 @@ def app_related(appid: int = APPID, *, conn=Depends(get_conn), who=Depends(calle
             dlc_ids.append(int(extra))
 
     known = {r["appid"]: r["name"] for r in conn.execute("SELECT appid, name FROM apps")}
+
+    # Les DLC viennent de PICS ; les demos, editions et playtests publics n'y
+    # sont relies par rien et se retrouvent par leur nom.
+    name = common.get("name") or details.get("name")
+    siblings = probes.related_by_name(name, appid)
+
     return {
         "appid": appid,
         "parent": common.get("parent") or (details.get("fullgame") or {}).get("appid"),
-        "dlc": [{"appid": d, "name": known.get(d), "tracked": d in known} for d in dlc_ids],
+        "dlc": [{"appid": d, "name": known.get(d), "tracked": d in known,
+                 "kind": "dlc"} for d in dlc_ids],
+        "siblings": [dict(s, tracked=s["appid"] in known) for s in siblings],
     }
 
 

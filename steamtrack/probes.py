@@ -10,6 +10,7 @@ jour, meme si le graphique est vide au debut.
 import json
 import logging
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
@@ -145,18 +146,49 @@ def sample_details(conn, appid, cc=DEFAULT_CC):
 TRAILER_ROOT = "https://video.akamai.steamstatic.com/store_trailers/"
 
 
+def _exists(url, timeout=10):
+    """Verifie qu'une URL repond, sans telecharger le corps."""
+    try:
+        req = urllib.request.Request(url, method="HEAD",
+                                     headers={"User-Agent": USER_AGENT})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status == 200
+    except Exception:                                      # noqa: BLE001
+        return False
+
+
 def _movie(m):
+    """Sources lisibles d'une bande-annonce.
+
+    Steam a deux conventions selon l'anciennete de la video :
+
+      - anciennes : un fichier direct, store_trailers/<id>/movie_max.mp4 ;
+      - recentes  : uniquement du streaming segmente (hls_h264, dash_h264),
+        sous un tout autre chemin. AUCUN mp4 n'existe pour celles-la.
+
+    On ne peut pas deviner laquelle s'applique : appdetails ne publie plus les
+    URL mp4 du tout. On teste donc l'existence du fichier une fois, a la
+    collecte, plutot que de laisser le navigateur echouer sur un 404 -- c'est
+    ce qui produisait "No video with supported format and MIME type found".
+    """
     mid = m.get("id")
     base = f"{TRAILER_ROOT}{mid}/" if mid else None
+    hls = m.get("hls_h264")
+    hls = hls.get("max") if isinstance(hls, dict) else hls
+
+    mp4 = mp4_480 = None
+    if base and _exists(f"{base}movie_max.mp4"):
+        mp4 = f"{base}movie_max.mp4"
+        mp4_480 = f"{base}movie480.mp4"
+
     return {
         "id": mid,
         "name": m.get("name"),
         "thumb": m.get("thumbnail"),
-        "mp4": f"{base}movie_max.mp4" if base else None,
-        "mp4_480": f"{base}movie480.mp4" if base else None,
-        "webm": f"{base}movie480_vp9.webm" if base else None,
-        # Conserve tel quel : utile a qui sait lire du HLS.
-        "hls": (m.get("hls_h264") or {}).get("max") if isinstance(m.get("hls_h264"), dict) else m.get("hls_h264"),
+        "mp4": mp4,
+        "mp4_480": mp4_480,
+        # Repli universel : lisible via hls.js, et nativement sur Safari.
+        "hls": hls,
     }
 
 
@@ -236,3 +268,64 @@ def details(conn, appid):
     data = json.loads(row["data"])
     data["_updated_at"] = row["updated_at"]
     return data
+
+
+# --- apps apparentees ----------------------------------------------------
+
+SEARCH_URL = ("https://store.steampowered.com/api/storesearch/"
+              "?term={term}&l=english&cc=US")
+
+
+def related_by_name(name, appid, limit=12):
+    """Apps du store dont le nom derive de celui du jeu : demo, edition, suite.
+
+    PICS ne relie pas ces apps entre elles : `listofdlc` ne couvre que les DLC,
+    et une demo est une app autonome. SteamDB les retrouve parce qu'il indexe
+    le nom de TOUS les apps de Steam ; a defaut, la recherche du store donne
+    l'essentiel.
+
+    Limite assumee : les apps non listees publiquement -- alpha fermee,
+    playtest sur invitation -- n'apparaissent dans aucune recherche. Elles
+    resteraient invisibles sans index complet de PICS.
+    """
+    if not name:
+        return []
+    payload = _get(SEARCH_URL.format(term=urllib.parse.quote(name)))
+    if not payload:
+        return []
+
+    base = name.strip().lower()
+    out = []
+    for item in payload.get("items", [])[:limit]:
+        other = int(item.get("id", 0))
+        label = (item.get("name") or "").strip()
+        if other == appid or not label:
+            continue
+        # Le nom doit deriver du jeu, pas seulement lui ressembler :
+        # "Fading Echoes" n'a rien a voir avec "Fading Echo".
+        low = label.lower()
+        if not low.startswith(base):
+            continue
+        rest = low[len(base):]
+        # Le suffixe doit commencer par un separateur : sinon "Fading Echoes"
+        # passerait pour une declinaison de "Fading Echo", alors que c'est un
+        # autre jeu.
+        if rest and rest[0].isalnum():
+            continue
+        suffix = rest.strip(" -:")
+        out.append({
+            "appid": other,
+            "name": label,
+            "kind": _guess_kind(suffix),
+        })
+    return out
+
+
+def _guess_kind(suffix):
+    for word, kind in (("demo", "demo"), ("playtest", "playtest"),
+                       ("beta", "beta"), ("alpha", "alpha"),
+                       ("soundtrack", "soundtrack"), ("artbook", "artbook"),
+                       ("bundle", "bundle")):
+        if word in suffix:
+            return kind
+    return "related" if suffix else "edition"

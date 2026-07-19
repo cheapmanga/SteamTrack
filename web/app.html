@@ -276,8 +276,10 @@
         // Un seul jeu d'elements pour la visionneuse : videos d'abord, comme
         // sur la fiche Steam, puis les captures.
         const items = [
-            ...movies.map(m => ({ kind: "video", src: m.mp4 || m.mp4_480 || m.webm,
-                                  fallback: m.mp4_480 || m.webm,
+            // src peut etre nul : les bandes-annonces recentes n'existent qu'en
+            // flux adaptatif, joue par hls.js.
+            ...movies.map(m => ({ kind: "video", src: m.mp4 || null,
+                                  fallback: m.mp4_480 || null, hls: m.hls,
                                   thumb: m.thumb, name: m.name })),
             ...shots.map(sc => ({ kind: "image", src: sc.full, thumb: sc.thumb })),
         ];
@@ -298,7 +300,9 @@
     }
 
     function renderRelated() {
-        if (!related || !related.dlc.length) {
+        const rows = [...((related && related.dlc) || []),
+                      ...((related && related.siblings) || [])];
+        if (!rows.length) {
             viewEl.replaceChildren(el("p", "empty",
                 related && related.parent
                     ? `This app is content for app ${related.parent}.`
@@ -312,7 +316,7 @@
         thead.append(head);
         table.append(thead);
         const body = el("tbody");
-        related.dlc.forEach(d => {
+        rows.forEach(d => {
             const tr = el("tr");
             tr.append(el("td", "mono", String(d.appid)));
             const name = el("td");
@@ -321,12 +325,12 @@
                 link.href = `app.html?appid=${d.appid}`;
                 name.append(link);
             } else {
-                name.textContent = d.name || "(not tracked)";
+                name.textContent = d.name || `App ${d.appid}`;
             }
             tr.append(name);
             const flag = el("td");
-            flag.append(el("span", "pill" + (d.tracked ? " public" : ""),
-                d.tracked ? "tracked" : "DLC"));
+            flag.append(el("span", "pill", (d.kind || "related").toUpperCase()));
+            if (d.tracked) flag.append(el("span", "pill public", "TRACKED"));
             tr.append(flag);
             body.append(tr);
         });
