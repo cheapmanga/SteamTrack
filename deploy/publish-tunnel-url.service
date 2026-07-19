@@ -1,0 +1,12 @@
+# Publication de l'adresse du tunnel (declenche par le timer, et au demarrage).
+[Unit]
+Description=Publie l'adresse du quick tunnel steamtrack
+After=cloudflared-quick.service
+Wants=cloudflared-quick.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/steamtrack/deploy/publish-tunnel-url.sh
+# Le jeton GitHub n'est lisible que par root : ce service ne tourne donc pas
+# sous l'utilisateur steamtrack, contrairement au collecteur et a l'API.
+User=root
