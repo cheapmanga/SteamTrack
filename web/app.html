@@ -110,7 +110,10 @@
             ["cloud", "Cloud saves", sections && sections.ufs
                 ? Object.keys(sections.ufs).length : 0],
             ["shots", "Screenshots", shots],
-            ["related", "Related apps", related ? related.dlc.length : 0],
+            // Le compteur ne comptait que les DLC : il affichait 0 alors que des demos
+            // et des liens manuels etaient bien listes dans l'onglet.
+            ["related", "Related apps", related
+                ? (related.dlc.length + (related.siblings || []).length) : 0],
             ["history", "Update history", changes.length],
         ];
         tabsEl.replaceChildren(...defs.map(([key, label, n]) => {
