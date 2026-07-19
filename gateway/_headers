@@ -1,0 +1,11 @@
+# En-tetes appliques par Cloudflare Pages. Ce fichier n'est pas publie.
+#
+# La passerelle est un aiguillage : elle indique ou joindre le service, et
+# cette adresse change a chaque redemarrage de la VM. La mettre en cache
+# reproduirait exactement le defaut qu'elle sert a corriger -- servir une
+# adresse morte en affirmant que tout va bien. On l'interdit donc, pour la
+# page comme pour les caches intermediaires.
+/*
+  Cache-Control: no-store, must-revalidate
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
