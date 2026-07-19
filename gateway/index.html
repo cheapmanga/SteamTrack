@@ -105,8 +105,23 @@ button:disabled { opacity: .45; cursor: default; }
 
 <script>
 // Source de verite : un fichier publie par la VM a chaque changement d'adresse.
-// Lu sur raw.githubusercontent, qui autorise la lecture depuis un navigateur.
-const SOURCE = "https://raw.githubusercontent.com/cheapmanga/SteamTrack/main/tunnel.json";
+// Deux facons de le lire, et l'ordre compte.
+//
+// L'API contents est la source PRINCIPALE. raw.githubusercontent impose un
+// cache CDN de 5 minutes que RIEN ne perce -- ni un parametre d'horodatage,
+// ni Cache-Control: no-cache, verifie le 19/07/2026 : le cache est cote
+// serveur et indexe sur le chemin, la relecture "forcee" plus bas relisait
+// donc exactement la meme valeur perimee. Consequence : apres un redemarrage
+// de la VM, cette page annoncait le service hors ligne pendant cinq minutes
+// alors qu'il tournait -- precisement le moment ou on vient la consulter.
+// L'API, elle, annonce max-age=60 et autorise le CORS.
+//
+// raw reste en REPLI : l'API plafonne a 60 requetes par heure et par IP sans
+// authentification. Cette page en consomme 6 (un passage toutes les dix
+// minutes), mais un visiteur qui martele "Check now" peut epuiser le quota --
+// et une adresse un peu vieille vaut mieux que pas d'adresse du tout.
+const SOURCE_API = "https://api.github.com/repos/cheapmanga/SteamTrack/contents/tunnel.json?ref=main";
+const SOURCE_RAW = "https://raw.githubusercontent.com/cheapmanga/SteamTrack/main/tunnel.json";
 const EVERY_MS = 600000;          // 10 minutes
 
 const dot = document.getElementById("dot");
@@ -123,12 +138,26 @@ function setState(kind, text) {
     msg.textContent = text;
 }
 
-// bust : force GitHub a resservir le fichier malgre son cache de 5 minutes.
+// bust : contourner les caches autant que possible. Cote API cela fonctionne
+// vraiment ; cote raw c'est sans effet, d'ou l'ordre des sources ci-dessus.
 async function readSource(bust) {
-    const url = SOURCE + (bust ? "?t=" + Date.now() : "");
-    const resp = await fetch(url, { cache: bust ? "reload" : "default" });
-    if (!resp.ok) throw new Error("HTTP " + resp.status);
-    return resp.json();
+    try {
+        const resp = await fetch(SOURCE_API + (bust ? "&t=" + Date.now() : ""),
+                                 { cache: "no-store",
+                                   headers: { Accept: "application/vnd.github+json" } });
+        if (!resp.ok) throw new Error("HTTP " + resp.status);
+        const meta = await resp.json();
+        // L'API ne rend pas le fichier tel quel : elle l'encapsule et encode
+        // son contenu en base64, decoupe en lignes qu'il faut recoller.
+        return JSON.parse(atob((meta.content || "").replace(/\s/g, "")));
+    } catch (err) {
+        // Quota epuise, panne de l'API, reponse illisible : on se rabat sur
+        // raw plutot que d'echouer. Moins frais, mais toujours exploitable.
+        const resp = await fetch(SOURCE_RAW + (bust ? "?t=" + Date.now() : ""),
+                                 { cache: bust ? "reload" : "default" });
+        if (!resp.ok) throw new Error("HTTP " + resp.status);
+        return resp.json();
+    }
 }
 
 // On ne se contente pas de lire l'adresse : on verifie qu'elle repond. Une
