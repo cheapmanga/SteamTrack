@@ -462,6 +462,15 @@
         viewEl.replaceChildren(...(note ? [note, wrap] : [wrap]));
     }
 
+    function branchDate(value) {
+        if (!value) return "-";
+        if (/^\d+$/.test(String(value))) {
+            return ago(new Date(Number(value) * 1000).toISOString());
+        }
+        const parsed = new Date(String(value).replace(/\s*[–-]\s*/, " "));
+        return isNaN(parsed) ? String(value) : ago(parsed.toISOString());
+    }
+
     function renderBranches() {
         if (!depots || !depots.branches.length) {
             viewEl.replaceChildren(el("p", "empty", "No branch recorded yet."));
@@ -481,8 +490,11 @@
             name.append(el("span", "pill" + (b.name === "public" ? " public" : ""), b.name));
             row.append(name);
             row.append(el("td", "mono", b.buildid || "-"));
-            row.append(el("td", "", b.updated
-                ? ago(new Date(Number(b.updated) * 1000).toISOString()) : "-"));
+            // Deux formats coexistent : PICS donne un horodatage Unix, une
+            // branche reconstituee depuis l'historique garde la date en clair
+            // ("8 July 2026 - 10:33:43 UTC"). Sans ce tri, new Date(NaN) levait
+            // "Invalid time value" et l'onglet entier ne se rendait pas.
+            row.append(el("td", "", branchDate(b.updated)));
             row.append(el("td", "", b.description || "-"));
             row.append(el("td", "", b.protected ? "password" : ""));
             body.append(row);
