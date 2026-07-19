@@ -300,7 +300,8 @@ def add_change(conn, appid, event):
     return cur.rowcount > 0
 
 
-def changes_for(conn, appid, limit=100, offset=0, kind=None, since=None):
+def changes_for(conn, appid, limit=100, offset=0, kind=None, since=None,
+                since_id=None):
     sql = "SELECT * FROM changes WHERE appid = ?"
     args = [appid]
     if kind:
@@ -308,7 +309,16 @@ def changes_for(conn, appid, limit=100, offset=0, kind=None, since=None):
         # qu'un changement mixte reste trouvable sous chacune de ses etiquettes.
         sql += " AND (kind = ? OR types LIKE ?)"
         args += [kind, f'%"{kind}"%']
-    if since:
+    if since_id:
+        # Suivi incremental par ordre de DECOUVERTE, et non par date de
+        # publication. Les deux different des qu'un evenement est enregistre
+        # apres coup : une annonce Steam parue hier et detectee aujourd'hui
+        # porte la date d'hier, donc `since` (occurred_at) ne la renvoie
+        # jamais a un client qui connait deja des evenements plus recents --
+        # elle n'apparaissait qu'au rechargement complet de la page.
+        sql += " AND id > ?"
+        args.append(since_id)
+    elif since:
         sql += " AND occurred_at > ?"
         args.append(since)
     sql += " ORDER BY occurred_at DESC LIMIT ? OFFSET ?"
@@ -316,10 +326,15 @@ def changes_for(conn, appid, limit=100, offset=0, kind=None, since=None):
     return [_row_to_event(r) for r in conn.execute(sql, args)]
 
 
-def recent_changes(conn, limit=100, since=None, kind=None):
+def recent_changes(conn, limit=100, since=None, kind=None, since_id=None):
     sql = "SELECT * FROM changes WHERE 1 = 1"
     args = []
-    if since:
+    if since_id:
+        # Voir changes_for : par ordre de decouverte, pour ne pas manquer un
+        # evenement enregistre apres coup.
+        sql += " AND id > ?"
+        args.append(since_id)
+    elif since:
         sql += " AND occurred_at > ?"
         args.append(since)
     if kind:

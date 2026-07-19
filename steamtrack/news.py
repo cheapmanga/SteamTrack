@@ -91,6 +91,20 @@ def reclean(conn, appid=None):
     return fixed
 
 
+def poll(conn, appid, count=20):
+    """Verifie s'il est paru une annonce depuis le dernier passage.
+
+    Meme mecanique que backfill, mais sur les dernieres entrees seulement :
+    en regime permanent on cherche une nouveaute, pas a reconstruire deux cents
+    annonces a chaque tour. Le dedoublonnage par gid rend l'appel sans effet
+    quand rien n'est paru, donc le seul cout est la requete HTTP.
+
+    Une fenetre de 20 laisse une marge tres large : il faudrait que vingt
+    annonces paraissent entre deux passages pour en perdre une.
+    """
+    return backfill(conn, appid, count=count)
+
+
 def backfill(conn, appid, count=200):
     """Enregistre les annonces disponibles. Renvoie le nombre de nouveautes."""
     added = 0

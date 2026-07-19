@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -27,7 +28,16 @@
   <h1>Tracked apps</h1>
   <p class="tagline">
     steamtrack records every update, patch, price move and player count for a hand-picked
-    list of Steam games, straight from Steam's public feed. <a href="about.html">What is this?</a>
+    list of Steam games, straight from Steam's public feed.
+  </p>
+  <p class="tagline">
+    It works like SteamDB, on a smaller scale: a client logged into Steam anonymously listens
+    to the public PICS feed, and each time a tracked game changes &mdash; a new build, a branch
+    or depot added, a store page edited, a price moved, a patch note posted &mdash; the event is
+    stored with its timestamp and a before/after view of the fields that moved. Everything is
+    also readable through a <a href="/docs">public API</a>. Only games added on purpose are
+    followed, and each one&rsquo;s history starts the day it was added &mdash; Steam does not hand
+    out past changelists. <a href="about.html">More about this site</a>
   </p>
   <p class="sub" id="sub">Loading...</p>
 

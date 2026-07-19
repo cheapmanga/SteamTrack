@@ -1,0 +1,13 @@
+<!-- Favicon steamtrack.
+     Dessine pour 16 px avant tout : a cette taille un logotype serait une
+     tache. D'ou trois formes seulement, tres espacees -- une courbe qui monte
+     par paliers (l'historique des changements) et un point qui marque le
+     dernier releve. Les couleurs sont celles du site : fond du panneau, accent
+     bleu Steam. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <rect width="32" height="32" rx="7" fill="#21262c"/>
+  <path d="M6 23 L12 23 L12 17 L18 17 L18 11 L26 11"
+        fill="none" stroke="#67c1f5" stroke-width="2.6"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="26" cy="11" r="3.4" fill="#67c1f5"/>
+</svg>

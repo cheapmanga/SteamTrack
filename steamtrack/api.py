@@ -260,6 +260,11 @@ def app_changes(
     kind: str | None = Query(None, pattern=f"^({KINDS})$",
                              description="build, depot, branch, store, assets, news, meta"),
     since: str | None = Query(None, description="ISO 8601 : ne renvoyer que les changements posterieurs"),
+    since_id: int | None = Query(None, ge=0, description=(
+        "id du dernier evenement connu : ne renvoyer que ceux enregistres depuis. "
+        "Preferer ce parametre a `since` pour du suivi incremental -- il suit "
+        "l'ordre de decouverte, donc il n'omet pas un evenement date d'hier mais "
+        "detecte aujourd'hui (typiquement une annonce Steam). Prioritaire sur `since`.")),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     conn=Depends(get_conn), who=Depends(caller),
@@ -267,7 +272,8 @@ def app_changes(
     """Historique d'un jeu. Un changement mixte est renvoye sous chacune de ses categories."""
     if not conn.execute("SELECT 1 FROM apps WHERE appid = ?", (appid,)).fetchone():
         raise HTTPException(status_code=404, detail="app not tracked")
-    events = db.changes_for(conn, appid, limit=limit, offset=offset, kind=kind, since=since)
+    events = db.changes_for(conn, appid, limit=limit, offset=offset, kind=kind,
+                            since=since, since_id=since_id)
     total = conn.execute(
         "SELECT COUNT(*) n FROM changes WHERE appid = ?", (appid,)
     ).fetchone()["n"]
@@ -291,11 +297,15 @@ def app_builds(appid: int = APPID, *, limit: int = Query(50, ge=1, le=500),
 def all_changes(
     kind: str | None = Query(None, pattern=f"^({KINDS})$"),
     since: str | None = Query(None, description="ISO 8601"),
+    since_id: int | None = Query(None, ge=0, description=(
+        "id du dernier evenement connu ; a preferer a `since` pour du suivi "
+        "incremental. Prioritaire sur `since`.")),
     limit: int = Query(50, ge=1, le=500),
     conn=Depends(get_conn), who=Depends(caller),
 ):
-    """Flux global, tous jeux suivis confondus. `since` permet le suivi incremental."""
-    events = db.recent_changes(conn, limit=limit, since=since, kind=kind)
+    """Flux global, tous jeux suivis confondus. `since_id` permet le suivi incremental."""
+    events = db.recent_changes(conn, limit=limit, since=since, kind=kind,
+                               since_id=since_id)
     return {"count": len(events), "changes": events}
 
 

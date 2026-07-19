@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>steamtrack — gateway</title>
+<!-- Favicon en data URI, pas en fichier : cette page doit rester autonome,
+     elle est servie ailleurs que le site et doit marcher quand il est mort. -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2321262c'/%3E%3Cpath d='M6 23 L12 23 L12 17 L18 17 L18 11 L26 11' fill='none' stroke='%2367c1f5' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='26' cy='11' r='3.4' fill='%2367c1f5'/%3E%3C/svg%3E">
 <style>
 /* Passerelle : adresse d'entree stable vers un tunnel dont l'URL change.
    Volontairement autonome (un seul fichier, aucune dependance) : elle doit
@@ -26,6 +29,14 @@ body {
 h1 { margin: 0 0 4px; font-size: 22px; font-weight: 600; }
 h1 span { color: var(--link); }
 .sub { color: var(--muted); font-size: 13.5px; margin: 0 0 22px; }
+/* Description du service, avant l'etat : un visiteur qui arrive par un lien
+   partage ne sait pas encore ce qu'est le site dont on lui annonce l'etat. */
+.what {
+    font-size: 13.5px; color: var(--muted); line-height: 1.65;
+    background: #1a1e23; border: 1px solid var(--border); border-radius: 5px;
+    padding: 13px 15px; margin: 0 0 20px;
+}
+.what strong { color: var(--text); font-weight: 600; }
 .state {
     display: flex; align-items: center; gap: 9px;
     font-size: 13.5px; margin-bottom: 16px;
@@ -66,6 +77,14 @@ button:disabled { opacity: .45; cursor: default; }
 <div class="card">
     <h1>steam<span>track</span></h1>
     <p class="sub">Stable entry point. The site runs behind a tunnel whose address changes; this page always points at the current one.</p>
+
+    <p class="what">
+        <strong>steamtrack</strong> follows a hand-picked list of Steam games and records what
+        changes about them &mdash; new builds, branches and depots, store page edits, price moves,
+        patch notes, player counts. It reads Steam&rsquo;s own public PICS feed as an anonymous
+        client, the same source SteamDB uses, and exposes everything through a browsable site and
+        a public API.
+    </p>
 
     <div class="state"><span class="dot wait" id="dot"></span><span id="msg">Checking...</span></div>
 
