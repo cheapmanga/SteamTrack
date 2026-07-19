@@ -21,9 +21,23 @@ log() { echo "$(date -Is)  $*"; }
 [[ -r "$TOKEN_FILE" ]] || { log "jeton introuvable : $TOKEN_FILE"; exit 1; }
 TOKEN=$(tr -d '\r\n' < "$TOKEN_FILE")
 
-URL=$(/opt/steamtrack/deploy/tunnel-url.sh 2>/dev/null || true)
+# Au demarrage, ce script s'execute avant que cloudflared ait annonce son
+# adresse : elle n'apparait dans son journal qu'une fois le tunnel etabli.
+# Abandonner ici couterait un passage entier du timer -- deux minutes pendant
+# lesquelles la passerelle pointe vers une adresse morte. On patiente donc, et
+# on publie a la seconde ou l'adresse existe. En regime normal elle est
+# disponible du premier coup et cette boucle ne coute rien.
+WAIT_S="${STEAMTRACK_WAIT_S:-120}"
+DEADLINE=$(( SECONDS + WAIT_S ))
+while :; do
+    URL=$(/opt/steamtrack/deploy/tunnel-url.sh 2>/dev/null || true)
+    [[ -n "$URL" ]] && break
+    (( SECONDS >= DEADLINE )) && break
+    sleep 2
+done
+
 if [[ -z "$URL" ]]; then
-    log "aucune adresse de tunnel disponible (service arrete ou pas encore pret)"
+    log "aucune adresse de tunnel apres ${WAIT_S}s (service arrete ?)"
     exit 0
 fi
 
