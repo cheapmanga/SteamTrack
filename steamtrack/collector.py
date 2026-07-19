@@ -176,6 +176,37 @@ class Collector:
         if watched:
             self.process(watched, "(surveillance rapprochee)")
 
+    def index_packages(self, packageids):
+        """Retient les packages qui contiennent un jeu suivi.
+
+        PICS ne relie pas un jeu a ses packages : c'est le package qui liste ses
+        apps. On ne peut donc pas demander "les packages de ce jeu" -- il faut
+        les avoir vus. On profite du flux, qui annonce les packages modifies, et
+        on garde ceux qui nous concernent. L'index se remplit avec le temps ; il
+        ne sera jamais complet des le premier jour, contrairement a celui de
+        SteamDB qui a parcouru Steam entier.
+        """
+        if not packageids:
+            return 0
+        tracked = db.tracked_ids(self.conn)
+        kept = 0
+        for i in range(0, len(packageids), BATCH):
+            chunk = packageids[i:i + BATCH]
+            try:
+                info = self.client.get_product_info(packages=chunk, timeout=60)
+            except Exception as exc:                      # noqa: BLE001
+                log.debug("packages %s : %s", chunk, exc)
+                continue
+            for pid, data in (info.get("packages") or {}).items():
+                appids = [int(a) for a in (data.get("appids") or {}).values()]
+                if not (set(appids) & tracked):
+                    continue
+                db.put_package(self.conn, int(pid), data, appids)
+                kept += 1
+        if kept:
+            log.info("  %d package(s) retenu(s)", kept)
+        return kept
+
     def bootstrap_pending(self):
         """Complete les jeux suivis qui n'ont pas encore de snapshot."""
         rows = self.conn.execute(
@@ -226,7 +257,7 @@ class Collector:
             self.watch_closely()
 
             try:
-                resp = self.client.get_changes_since(last, True, False)
+                resp = self.client.get_changes_since(last, True, True)
             except Exception as exc:                      # noqa: BLE001
                 log.warning("flux interrompu (%s), reconnexion", exc)
                 self.client.sleep(15)
@@ -243,6 +274,10 @@ class Collector:
 
                 # Sans cette trace, un collecteur qui tourne mais ne croise
                 # aucun jeu suivi est indiscernable d'un collecteur en panne.
+                # Les packages changent en meme temps que les apps : c'est la
+                # seule occasion de les voir passer.
+                self.index_packages([p.packageid for p in resp.package_changes])
+
                 hits = len(set(appids) & db.tracked_ids(self.conn))
                 seen_apps += len(appids)
                 seen_lists += 1

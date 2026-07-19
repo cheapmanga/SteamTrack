@@ -358,3 +358,42 @@ def set_state(conn, name, value):
            ON CONFLICT(name) DO UPDATE SET value = excluded.value""",
         (name, str(value)),
     )
+
+
+# --- packages ------------------------------------------------------------
+
+def put_package(conn, packageid, data, appids):
+    conn.execute(
+        """INSERT INTO packages (packageid, data, updated_at) VALUES (?, ?, ?)
+           ON CONFLICT(packageid) DO UPDATE SET data = excluded.data,
+                                                updated_at = excluded.updated_at""",
+        (packageid, json.dumps(data, sort_keys=True), now()),
+    )
+    for appid in appids:
+        conn.execute(
+            "INSERT OR IGNORE INTO package_apps (packageid, appid) VALUES (?, ?)",
+            (packageid, appid),
+        )
+
+
+def packages_for(conn, appid):
+    rows = conn.execute(
+        """SELECT p.packageid, p.data, p.updated_at
+           FROM packages p JOIN package_apps pa ON pa.packageid = p.packageid
+           WHERE pa.appid = ? ORDER BY p.packageid""",
+        (appid,),
+    ).fetchall()
+    out = []
+    for r in rows:
+        data = json.loads(r["data"])
+        out.append({
+            "packageid": r["packageid"],
+            "name": (data.get("common") or {}).get("name")
+                    or (data.get("extended") or {}).get("name"),
+            "billingtype": data.get("billingtype"),
+            "licensetype": data.get("licensetype"),
+            "apps": sorted(int(a) for a in (data.get("appids") or {}).values()),
+            "depots": sorted(int(d) for d in (data.get("depotids") or {}).values()),
+            "updated_at": r["updated_at"],
+        })
+    return out

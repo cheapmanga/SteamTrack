@@ -90,7 +90,7 @@
             img.addEventListener("error", () => { img.style.visibility = "hidden"; });
             link.append(img, el("span", "app-name", app.name || `App ${app.appid}`));
             cell.append(link);
-            if (!app.depots_public) {
+            if (!app.depots_known) {
                 const flag = el("span", "tag", "NO DEPOTS");
                 flag.title = "This app requires a token: builds are detected without their buildid";
                 flag.style.marginLeft = "8px";

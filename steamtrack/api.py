@@ -210,6 +210,11 @@ def list_apps(conn=Depends(get_conn), who=Depends(caller)):
             # Signale au consommateur que les builds de cet app arriveront sans
             # buildid : ce n'est pas une anomalie de notre cote.
             "depots_public": not bool(r["missing_token"]),
+            # Un historique importe peut avoir permis de reconstituer les
+            # depots : afficher "no depots" alors que l'onglet les montre
+            # serait une contradiction visible.
+            "depots_known": (not bool(r["missing_token"]))
+                            or bool(derive.depots_from_history(conn, r["appid"])),
         }
         for r in rows
     ]}
@@ -381,6 +386,38 @@ def app_depots(appid: int = APPID, *, conn=Depends(get_conn), who=Depends(caller
             }
             for name, info in branches.items()
         ],
+    }
+
+
+@app.get("/v1/apps/{appid}/packages", tags=["apps"])
+def app_packages(appid: int = APPID, conn=Depends(get_conn), who=Depends(caller)):
+    """Packages contenant ce jeu.
+
+    Deux origines : ceux vus passer dans le flux PICS, et ceux annonces par la
+    fiche store. Un package qui n'a pas bouge depuis la mise en service et qui
+    n'est pas vendu sur le store reste invisible -- les retrouver tous
+    supposerait d'avoir parcouru l'ensemble des packages de Steam.
+    """
+    if not conn.execute("SELECT 1 FROM apps WHERE appid = ?", (appid,)).fetchone():
+        raise HTTPException(status_code=404, detail="app not tracked")
+
+    from_pics = db.packages_for(conn, appid)
+    seen = {p["packageid"] for p in from_pics}
+
+    details = probes.details(conn, appid) or {}
+    from_store = []
+    for group in details.get("packages") or []:
+        for sub in group.get("subs") or []:
+            pid = sub.get("packageid")
+            if pid and pid not in seen:
+                from_store.append({
+                    "packageid": pid, "name": sub.get("text"),
+                    "price": sub.get("price"), "source": "store",
+                })
+
+    return {
+        "appid": appid,
+        "packages": [dict(p, source="pics") for p in from_pics] + from_store,
     }
 
 
