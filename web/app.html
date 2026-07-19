@@ -205,8 +205,71 @@
     }
 
     function renderConfig() {
-        sectionTable(sections && sections.config,
-            "No configuration published for this app.");
+        const cfg = sections && sections.config;
+        if (!cfg || !Object.keys(cfg).length) {
+            viewEl.replaceChildren(el("p", "empty",
+                "No configuration published for this app."));
+            return;
+        }
+
+        const blocks = [];
+
+        // Les options de lancement meritent un tableau : aplaties en
+        // launch/0/executable, launch/0/config/oslist... elles sont illisibles,
+        // alors que ce sont les lignes les plus consultees de cette section.
+        const launch = cfg.launch || {};
+        const rows = Object.keys(launch)
+            .sort((a, b) => Number(a) - Number(b))
+            .map(k => ({ index: k, ...launch[k] }))
+            .filter(r => r.executable || r.description);
+
+        if (rows.length) {
+            blocks.push(el("h2", "sub-head", "Launch options"));
+            const table = el("table", "mini");
+            const head = el("tr");
+            ["#", "Executable", "Arguments", "OS", "Beta", "Description"]
+                .forEach(h => head.append(el("th", "", h)));
+            const thead = el("thead");
+            thead.append(head);
+            table.append(thead);
+            const body = el("tbody");
+            rows.forEach(r => {
+                const c = r.config || {};
+                const tr = el("tr");
+                tr.append(el("td", "mono", String(r.index)));
+                tr.append(el("td", "mono", r.executable || "-"));
+                tr.append(el("td", "mono", r.arguments || "-"));
+                const os = [c.oslist, c.osarch ? c.osarch + "-bit" : null]
+                    .filter(Boolean).join(" ");
+                tr.append(el("td", "", os || "-"));
+                const beta = el("td");
+                if (c.betakey) beta.append(el("span", "pill", c.betakey));
+                else beta.textContent = "-";
+                tr.append(beta);
+                tr.append(el("td", "", r.description || "-"));
+                body.append(tr);
+            });
+            table.append(body);
+            const wrap = el("div", "table-wrap");
+            wrap.append(table);
+            blocks.push(wrap);
+        }
+
+        // Le reste, sans launch qu'on vient de rendre.
+        const rest = {};
+        Object.entries(cfg).forEach(([k, v]) => { if (k !== "launch") rest[k] = v; });
+        if (Object.keys(rest).length) {
+            blocks.push(el("h2", "sub-head", "Other settings"));
+            const holder = el("div");
+            const previous = viewEl.replaceChildren;
+            // sectionTable ecrit dans viewEl : on lui laisse produire son
+            // tableau, puis on le recupere pour l'inserer dans nos blocs.
+            sectionTable(rest, "");
+            while (viewEl.firstChild) holder.append(viewEl.firstChild);
+            blocks.push(holder);
+        }
+
+        viewEl.replaceChildren(...blocks);
     }
 
     function renderCloud() {

@@ -635,3 +635,15 @@ footer {
     margin-top: 34px;
     padding-top: 16px;
 }
+
+/* Titre de sous-section dans un onglet (Configuration : options de lancement,
+   puis le reste des reglages). */
+.sub-head {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    margin: 4px 0 10px;
+}
+.sub-head + .table-wrap { margin-bottom: 22px; }
