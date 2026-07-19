@@ -36,6 +36,15 @@ IDLE_SWEEP_S = 1800
 PLAYERS_EVERY_S = 600
 # Fiche store et prix : ils bougent rarement, inutile d'y revenir souvent.
 DETAILS_EVERY_S = 21600
+# Annonces : PICS ne les annonce PAS. Une news publiee sur Steam ne produit
+# aucun changelist, donc rien dans la boucle principale ne la ferait apparaitre
+# -- jusqu'ici elles n'etaient lues qu'une fois, a l'ajout du jeu. D'ou ce
+# sondage dedie. Cinq minutes : ISteamNews est un endpoint public et leger, et
+# c'est le delai maximum entre la publication d'un patch note et son affichage.
+NEWS_EVERY_S = 300
+# Profondeur du sondage. Large marge : il faudrait vingt annonces entre deux
+# passages pour en manquer une.
+NEWS_POLL_COUNT = 20
 
 # Apps sous surveillance rapprochee : le flux PICS reste la source principale,
 # mais on repasse aussi sur elles regulierement. Utile a l'approche d'une
@@ -53,6 +62,7 @@ class Collector:
         self.last_players = 0.0
         self.last_details = 0.0
         self.last_watch = 0.0
+        self.last_news = 0.0
 
     # -- Steam ------------------------------------------------------------
     def connect(self):
@@ -160,6 +170,33 @@ class Collector:
             self.last_details = now
             log.info("fiches store rafraichies (%d app(s))", len(apps))
 
+    def poll_news(self, force=False):
+        """Detecte les annonces parues depuis le dernier passage.
+
+        Separe de run_probes a dessein : une frequentation manquee est perdue,
+        une annonce manquee ne l'est pas -- ISteamNews la rendra encore au
+        prochain tour. Les deux n'ont donc ni la meme urgence ni le meme
+        traitement en cas d'echec, et les melanger ferait croire l'inverse.
+
+        Un jeu sans snapshot est ignore : il n'a pas encore ete initialise, et
+        bootstrap_pending fera de toute facon son backfill complet.
+        """
+        now = time.time()
+        if not force and now - self.last_news < NEWS_EVERY_S:
+            return
+        self.last_news = now
+
+        for appid in db.tracked_ids(self.conn):
+            try:
+                added = news.poll(self.conn, appid, count=NEWS_POLL_COUNT)
+            except Exception as exc:                      # noqa: BLE001
+                # Une annonce ratee se rattrape au tour suivant : rien ici ne
+                # justifie d'interrompre la boucle du collecteur.
+                log.warning("annonces %s : %s", appid, exc)
+                continue
+            if added:
+                log.info("%d annonce(s) pour l'app %s", added, appid)
+
     def watch_closely(self):
         """Repasse frequemment sur les apps a surveiller de pres.
 
@@ -254,6 +291,7 @@ class Collector:
             # le droit de le faire.
             self.bootstrap_pending()
             self.run_probes()
+            self.poll_news()
             self.watch_closely()
 
             try:
