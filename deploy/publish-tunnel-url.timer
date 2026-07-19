@@ -1,17 +1,27 @@
-# Verifie l'adresse toutes les 2 minutes.
+# Verifie l'adresse toutes les 2 minutes, et des 10 s apres le demarrage.
 #
-# 2 et non 10 : l'adresse ne change qu'au redemarrage du tunnel, donc le script
-# ne publie presque jamais. Le cout d'un passage est nul (lecture d'un journal),
-# alors que chaque minute d'attente est une minute ou la passerelle pointe vers
-# une adresse morte. S'y ajoute le cache de 5 minutes de raw.githubusercontent,
-# qu'on ne maitrise pas : autant ne pas y ajouter le notre.
+# 2 min et non 10 : l'adresse ne change qu'au redemarrage du tunnel, donc le
+# script ne publie presque jamais. Le cout d'un passage est nul (lecture d'un
+# journal), alors que chaque minute d'attente est une minute ou la passerelle
+# pointe vers une adresse morte.
+#
+# OnBootSec=10s et non 90s : c'est le redemarrage qui compte, c'est la que
+# l'adresse change et qu'on vient consulter la passerelle. Demarrer tot n'a de
+# sens que parce que le script sait desormais ATTENDRE que cloudflared annonce
+# son adresse, au lieu d'abandonner -- sans cette attente, partir plus tot
+# ferait seulement echouer le premier passage et reporter la publication de
+# deux minutes.
+#
+# AccuracySec=1s : par defaut systemd s'autorise a decaler un declenchement
+# pour grouper les reveils, ce qui ajoutait jusqu'a 15 s a un delai qu'on
+# cherche justement a raboter.
 [Unit]
 Description=Verifie periodiquement l'adresse du tunnel steamtrack
 
 [Timer]
-OnBootSec=90s
+OnBootSec=10s
 OnUnitActiveSec=2min
-AccuracySec=15s
+AccuracySec=1s
 
 [Install]
 WantedBy=timers.target
