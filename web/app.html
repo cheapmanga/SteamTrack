@@ -46,7 +46,7 @@
     const footEl = document.getElementById("foot");
 
     let app = null, changes = [], depots = null, players = null, info = null;
-    let sections = null, related = null, patches = null;
+    let sections = null, related = null, patches = null, packages = null;
     let tab = location.hash.replace("#", "") || "info";
     let kind = "all", shown = 0, query = "";
 
@@ -94,8 +94,7 @@
     // ----- Onglets -----
     function renderTabs() {
         const shots = (info && info.screenshots) ? info.screenshots.length : 0;
-        const packs = (info && info.packages)
-            ? info.packages.reduce((n, g) => n + (g.subs || []).length, 0) : 0;
+        const packs = (packages || []).length;
         const defs = [
             ["info", "Store info", null],
             ["charts", "Charts", players && players.series ? players.series.length : 0],
@@ -243,26 +242,32 @@
     }
 
     function renderPackages() {
-        const groups = (info && info.packages) || [];
-        if (!groups.length) {
-            viewEl.replaceChildren(el("p", "empty", "No package listed on the store."));
+        const rows = packages || [];
+        if (!rows.length) {
+            viewEl.replaceChildren(el("p", "empty",
+                "No package recorded yet. Packages are indexed as they appear in "
+                + "the PICS stream, so one that has not changed since tracking "
+                + "began is not listed."));
             return;
         }
         const table = el("table", "mini");
         const head = el("tr");
-        ["Package", "Name", "Price"].forEach(h => head.append(el("th", "", h)));
+        ["Package", "Name", "Apps", "Depots", ""].forEach(h => head.append(el("th", "", h)));
         const thead = el("thead");
         thead.append(head);
         table.append(thead);
         const body = el("tbody");
-        groups.forEach(g => (g.subs || []).forEach(sub => {
+        rows.forEach(pk => {
             const tr = el("tr");
-            tr.append(el("td", "mono", String(sub.packageid || "-")));
-            tr.append(el("td", "", sub.text || "-"));
-            tr.append(el("td", "mono", sub.price != null
-                ? (sub.price / 100).toFixed(2) : "-"));
+            tr.append(el("td", "mono", String(pk.packageid)));
+            tr.append(el("td", "", pk.name || "-"));
+            tr.append(el("td", "mono", (pk.apps || []).join(", ") || "-"));
+            tr.append(el("td", "mono", (pk.depots || []).join(", ") || "-"));
+            const flag = el("td");
+            flag.append(el("span", "pill", (pk.source || "").toUpperCase()));
+            tr.append(flag);
             body.append(tr);
-        }));
+        });
         table.append(body);
         const wrap = el("div", "table-wrap");
         wrap.append(table);
@@ -552,6 +557,19 @@
         row("Platforms", Object.entries(info.platforms || {})
             .filter(([, on]) => on).map(([os]) => os));
         row("Website", info.website);
+
+        // Lien direct vers la fiche Steam : c'est la premiere chose qu'on
+        // cherche en consultant les informations d'un jeu.
+        const tr = el("tr");
+        tr.append(el("th", "", "Steam page"));
+        const td = el("td");
+        const link = el("a", "", `store.steampowered.com/app/${appid}/`);
+        link.href = `https://store.steampowered.com/app/${appid}/`;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        td.append(link);
+        tr.append(td);
+        body.append(tr);
         table.append(body);
         const wrap = el("div", "table-wrap");
         wrap.append(table);
@@ -589,7 +607,7 @@
     }
 
     async function loadAll() {
-        const [a, c, d, p, i, sec, rel, pat] = await Promise.all([
+        const [a, c, d, p, i, sec, rel, pat, pkg] = await Promise.all([
             api(`/v1/apps/${appid}`),
             loadAllChanges(),
             api(`/v1/apps/${appid}/depots`).catch(() => null),
@@ -598,6 +616,7 @@
             api(`/v1/apps/${appid}/sections`).catch(() => null),
             api(`/v1/apps/${appid}/related`).catch(() => null),
             api(`/v1/apps/${appid}/patches`).catch(() => null),
+            api(`/v1/apps/${appid}/packages`).catch(() => null),
         ]);
         const before = changes.length ? new Set(changes.map(e => e.id)) : null;
         app = a;
@@ -608,6 +627,7 @@
         sections = sec ? sec.sections : null;
         related = rel;
         patches = pat ? pat.patches : null;
+        packages = pkg ? pkg.packages : null;
         return before ? changes.filter(e => !before.has(e.id)).length : 0;
     }
 

@@ -53,6 +53,27 @@ CREATE INDEX IF NOT EXISTS idx_changes_app_time ON changes (appid, occurred_at D
 CREATE INDEX IF NOT EXISTS idx_changes_time     ON changes (occurred_at DESC);
 CREATE INDEX IF NOT EXISTS idx_changes_kind     ON changes (kind, occurred_at DESC);
 
+-- Packages contenant un jeu suivi.
+--
+-- PICS place la liste des apps dans le PACKAGE, jamais l'inverse : retrouver
+-- les packages d'un jeu suppose de les avoir tous parcourus, ce que fait
+-- SteamDB. On alimente donc cette table au fil du flux -- un package qui change
+-- est charge, et retenu s'il contient un jeu suivi -- ou a la main.
+CREATE TABLE IF NOT EXISTS packages (
+    packageid  INTEGER PRIMARY KEY,
+    data       TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+-- Lien package -> app, extrait de la liste d'apps du package.
+CREATE TABLE IF NOT EXISTS package_apps (
+    packageid INTEGER NOT NULL REFERENCES packages(packageid) ON DELETE CASCADE,
+    appid     INTEGER NOT NULL,
+    PRIMARY KEY (packageid, appid)
+);
+
+CREATE INDEX IF NOT EXISTS idx_package_apps_app ON package_apps (appid);
+
 -- Apps apparentees declarees a la main.
 --
 -- PICS place le lien dans l'ENFANT (une demo porte parent=<jeu>), jamais dans
