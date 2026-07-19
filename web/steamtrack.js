@@ -107,7 +107,8 @@ function panel(event, opts = {}) {
 
 function newsBody(payload) {
     const wrap = el("div");
-    const text = el("div", "news-body", payload.body || "");
+    const text = el("div", "news-body");
+    text.append(linkify(payload.body || ""));
     wrap.append(text);
 
     const actions = el("div", "news-actions");
@@ -140,7 +141,19 @@ function tree(nodes) {
             const cls = {
                 del: "s-del", ins: "s-ins", field: "s-field", muted: "s-muted",
             }[seg.t] || "s-text";
-            line.append(seg.href ? mediaLink(seg, cls) : el("span", cls, seg.v));
+            if (seg.href) {
+                line.append(mediaLink(seg, cls));
+            } else if (URL_IN_TEXT.test(seg.v)) {
+                // test() avance lastIndex sur un regex global : le remettre a
+                // zero, sinon un segment sur deux serait ignore.
+                URL_IN_TEXT.lastIndex = 0;
+                const span = el("span", cls);
+                span.append(linkify(seg.v));
+                line.append(span);
+            } else {
+                URL_IN_TEXT.lastIndex = 0;
+                line.append(el("span", cls, seg.v));
+            }
         });
         item.append(line);
         if (node.children && node.children.length) item.append(tree(node.children));
@@ -585,4 +598,49 @@ async function playVideo(video, item) {
         video.replaceWith(el("p", "empty err",
             "This trailer is only published as an adaptive stream, which this browser cannot play."));
     }
+}
+
+// ----- Liens -----
+// Le site affiche beaucoup d'identifiants et d'URL en texte brut. Les rendre
+// cliquables evite le copier-coller, a condition de ne fabriquer que des liens
+// qui menent quelque part.
+//
+// Cibles verifiees (HTTP 200) : store.steampowered.com/app|sub,
+// steamcommunity.com/app. SteamDB refuse les requetes automatisees (403), donc
+// ses liens n'ont pas pu etre verifies ici -- ils sont utilises uniquement la
+// ou Steam n'expose aucune page equivalente : depots et notes de build.
+const STEAM_APP = id => `https://store.steampowered.com/app/${id}/`;
+const STEAM_SUB = id => `https://store.steampowered.com/sub/${id}/`;
+const STEAMDB_DEPOT = id => `https://steamdb.info/depot/${id}/`;
+const STEAMDB_BUILD = id => `https://steamdb.info/patchnotes/${id}/`;
+
+function extLink(href, text, cls) {
+    const a = el("a", cls || "", text);
+    a.href = href;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    return a;
+}
+
+// Une URL trouvee dans un texte n'est suivie que si son schema est http(s) :
+// le contenu vient de Steam, mais un javascript: recopie tel quel serait
+// executable au clic.
+const URL_IN_TEXT = /https?:\/\/[^\s<>"')\]]+/g;
+
+function linkify(text) {
+    const frag = document.createDocumentFragment();
+    if (!text) return frag;
+
+    let last = 0;
+    for (const match of String(text).matchAll(URL_IN_TEXT)) {
+        if (match.index > last) {
+            frag.append(document.createTextNode(text.slice(last, match.index)));
+        }
+        // La ponctuation finale appartient a la phrase, pas a l'URL.
+        let url = match[0].replace(/[.,;:!?]+$/, "");
+        frag.append(extLink(url, url));
+        last = match.index + url.length;
+    }
+    if (last < text.length) frag.append(document.createTextNode(text.slice(last)));
+    return frag;
 }
