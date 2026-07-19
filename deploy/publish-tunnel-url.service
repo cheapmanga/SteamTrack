@@ -6,7 +6,10 @@ Wants=cloudflared-quick.service
 
 [Service]
 Type=oneshot
-ExecStart=/opt/steamtrack/deploy/publish-tunnel-url.sh
+# Invoque par bash plutot que directement : un deploiement qui perd le bit
+# +x (copie, tar, checkout) casserait sinon le service au prochain boot,
+# et l'adresse du tunnel resterait celle d'avant -- donc morte.
+ExecStart=/bin/bash /opt/steamtrack/deploy/publish-tunnel-url.sh
 # Le jeton GitHub n'est lisible que par root : ce service ne tourne donc pas
 # sous l'utilisateur steamtrack, contrairement au collecteur et a l'API.
 User=root
