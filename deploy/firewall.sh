@@ -13,6 +13,19 @@
 set -euo pipefail
 
 LAN="${1:-192.168.1.0/24}"
+
+# Reseaux d'administration supplementaires, en plus du LAN.
+#
+# Piege vecu : un poste sous WSL2 sort avec une adresse traduite (ici 10.5.5.x)
+# qui n'est PAS celle que montre `ip route get` sur ce poste. Autoriser le LAN
+# seul avait donc coupe l'acces SSH de l'administrateur, sans recours puisque
+# la commande de reparation demande justement un shell.
+#
+# Avant d'appliquer ce script depuis une machine distante, VERIFIER l'adresse
+# reellement vue par le serveur :
+#     journalctl -u ssh -n 5     (cote serveur)
+# ou, si un service HTTP tourne deja, lire l'IP cliente dans ses journaux.
+ADMIN_NETS="${ADMIN_NETS:-10.5.5.0/24}"
 API_PORT=8080
 
 if [[ $EUID -ne 0 ]]; then
