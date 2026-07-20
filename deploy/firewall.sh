@@ -103,7 +103,7 @@ ufw status verbose
 cat <<'EOF'
 
 Verifications :
-  - Depuis un autre poste du LAN :  curl -sS http://192.168.1.55:8080/health
+  - Depuis un autre poste du LAN :  curl -sS http://<IP-DE-LA-VM>:8080/health
   - Depuis l'exterieur, le port 8080 doit etre INJOIGNABLE. Seule l'URL du
     tunnel Cloudflare doit repondre.
   - La session SSH courante doit toujours etre vivante. Avant de la fermer,
