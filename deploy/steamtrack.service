@@ -12,7 +12,15 @@ WorkingDirectory=/opt/steamtrack
 Environment=STEAMTRACK_DB=/opt/steamtrack/data/steamtrack.db
 ExecStart=/opt/steamtrack/.venv/bin/python -u -m steamtrack.collector
 Restart=always
-RestartSec=15
+# 60 s et non 15 : le 21/07/2026, une coupure Internet a fait planter le
+# collecteur, et systemd l'a relance 15 s plus tard, en pleine coupure. Son
+# bootstrap Steam a echoue et il s'est fige pour trois jours. Attendre une
+# minute ne coute rien et evite de rejouer le demarrage au pire moment.
+RestartSec=60
+# Fige, le processus n'honore plus SIGTERM : sans cette limite systemd patiente
+# 90 s (le defaut) avant de le tuer, et chaque redemarrage du watchdog traine
+# d'autant. Rien a sauvegarder a l'arret -- la base est ecrite au fil de l'eau.
+TimeoutStopSec=30
 # Le collecteur ne fait que lire le reseau et ecrire sa base.
 NoNewPrivileges=true
 PrivateTmp=true

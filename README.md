@@ -143,6 +143,7 @@ Two services, two roles:
 |---|---|
 | `steamtrack.service` | PICS collector, **the only heavy writer** to the database |
 | `steamtrack-api.service` | uvicorn, 3 workers, reads the database and serves `web/` |
+| `steamtrack-watchdog.timer` | every 5 min, restarts whichever of the three is wedged |
 
 The API runs with **3 workers** on 2 vCPUs: the endpoints are synchronous and
 spend most of their time blocked on SQLite, so 2 workers keep both cores busy and
@@ -150,6 +151,33 @@ the 3rd absorbs disk waits, without overshooting 2 GB of RAM. This is safe: WAL
 allows several concurrent readers, each request opens its own connection, and the
 quota counters live in the `api_usage` table -- so they are shared across workers
 rather than per-process.
+
+### Watchdog
+
+`Restart=always` is not enough here. On 2026-07-21 a 50-minute ISP outage took
+the service down **for three days**: neither the collector nor cloudflared
+recovers on its own once the network returns, and both stay *alive* while broken,
+so systemd never restarts them and `systemctl is-active` keeps answering
+`active`.
+
+`deploy/watchdog.sh` therefore judges on evidence of work, not on unit state:
+
+- **collector** -- timestamp of its last journal line. Silent for over 10 min
+  means wedged (the largest normal gap measured over two days was 52 s).
+- **API** -- probed on `127.0.0.1:8080`. Checked before the tunnel, so an API
+  failure never gets blamed on cloudflared.
+- **tunnel** -- probed through the *public* URL, the full round trip out to the
+  Cloudflare edge and back in. Two attempts 15 s apart, since each restart burns
+  a new address that takes up to 5 min to propagate. After a restart it triggers
+  `publish-tunnel-url.service` rather than waiting for its timer.
+
+Two safeguards. It does nothing at all while the VM has no internet access --
+during the outage, a restart cannot help and restarting the collector mid-outage
+is exactly what wedged it. And it will not touch the same unit twice within
+30 min: a restart that fixes nothing must not become a restart loop.
+
+Everything it does goes to `journalctl -u steamtrack-watchdog`; a healthy pass is
+silent.
 
 ## Going public
 
