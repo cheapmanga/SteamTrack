@@ -15,7 +15,7 @@ import sqlite3
 from pathlib import Path
 from datetime import datetime, timezone
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
+from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi import Path as PathParam
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -607,6 +607,113 @@ def delete_app(appid: int = APPID, *, conn=Depends(get_conn), who=Depends(admin)
         raise HTTPException(status_code=404, detail="app not tracked")
     return {"appid": appid, "removed": True,
             "name": removed["name"], "changes_deleted": removed["changes"]}
+
+
+# --- ingestion du buildid rapporte par un proprietaire ---------------------
+#
+# A INSERER AVANT le montage StaticFiles sur "/" (qui doit rester en
+# DERNIER, sinon il capture cette route et renvoie 405 sur POST).
+#
+# Steam n'expose ni depots ni buildid pour les apps qui exigent un token, et le
+# collecteur anonyme ne peut donc pas les voir. Une machine qui POSSEDE le jeu,
+# elle, a le buildid ecrit en clair dans appmanifest_<appid>.acf. Cet endpoint
+# recoit ce nombre et l'enregistre comme un evenement `build`, source
+# "manifest", pour qu'il apparaisse dans l'historique comme n'importe quel
+# autre changement.
+#
+# Aucune credential Steam cote serveur : c'est le proprietaire qui pousse.
+
+@app.post("/v1/apps/{appid}/buildid", status_code=201, tags=["changes"])
+def report_buildid(appid: int = PathParam(..., ge=1, le=MAX_APPID),
+                   body: dict = Body(...),
+                   conn=Depends(get_conn), who=Depends(admin)):
+    """Enregistre le buildid lu dans un appmanifest local.
+
+    Idempotent : si le dernier buildid connu pour cette source est identique,
+    rien n'est ecrit et le statut renvoye est "unchanged". Un client peut donc
+    poster aussi souvent qu'il veut.
+    """
+    buildid = str(body.get("buildid") or "").strip()
+    if not buildid.isdigit():
+        raise HTTPException(status_code=422,
+                            detail="buildid must be a numeric string")
+
+    # Un appmanifest peut decrire une installation basculee sur une branche
+    # beta protegee par mot de passe (`UserConfig { "BetaKey" "..." }`). Steam
+    # n'expose alors ni le nom de la branche ni son buildid : le publier dans
+    # cet historique, qui est PUBLIC, reviendrait a divulguer le contenu d'une
+    # branche que l'editeur garde fermee. Seul `public` est acceptable.
+    #
+    # Fail-closed : un client qui n'envoie pas le champ est refuse, car un
+    # champ absent est indiscernable d'une installation sur beta.
+    keys = {k.lower(): k for k in body}
+    if "betakey" not in keys:
+        raise HTTPException(
+            status_code=422,
+            detail="betakey is required: send the acf UserConfig.BetaKey "
+                   "verbatim, or an empty string on the public branch")
+
+    betakey = str(body[keys["betakey"]] or "").strip()
+    if betakey and betakey.lower() != "public":
+        raise HTTPException(
+            status_code=403,
+            detail=f"refusing to publish a buildid read from beta branch "
+                   f"'{betakey}': this history is public, and Steam does not "
+                   f"expose password-protected branches")
+
+    row = conn.execute(
+        """SELECT buildid FROM changes
+           WHERE appid = ? AND source = 'manifest' AND buildid IS NOT NULL
+           ORDER BY id DESC LIMIT 1""",
+        (appid,),
+    ).fetchone()
+    previous = row["buildid"] if row else None
+
+    if previous == buildid:
+        return JSONResponse(status_code=200,
+                            content={"status": "unchanged", "buildid": buildid,
+                                     "appid": appid})
+
+    name = str(body.get("name") or "").strip()[:120]
+    title = f"Build {buildid} (reported by an owner)"
+
+    detail = ("Read from appmanifest on a machine that owns the game. "
+              "The anonymous PICS collector cannot see this app's buildid, "
+              "because Steam gates it behind an app token.")
+    payload = [{
+        "op": "added",
+        "seg": [
+            {"t": "text", "v": "Owner-reported "},
+            {"t": "field", "v": "buildid:"},
+            {"t": "ins", "v": buildid},
+        ] + ([{"t": "text", "v": f"  ({name})"}] if name else []),
+        "children": [{"op": "none",
+                      "seg": [{"t": "muted", "v": detail}],
+                      "children": []}],
+    }]
+
+    # LastUpdated vient du manifeste et date l'installation reelle ; a defaut,
+    # l'instant de reception.
+    occurred_at = db.now()
+    last_updated = str(body.get("LastUpdated") or "").strip()
+    if last_updated.isdigit():
+        occurred_at = datetime.fromtimestamp(
+            int(last_updated), tz=timezone.utc).isoformat()
+
+    created = db.add_change(conn, appid, {
+        "kind": "build",
+        "types": ["build"],
+        "title": title,
+        "buildid": buildid,
+        "occurred_at": occurred_at,
+        "payload": payload,
+        "source": "manifest",
+    })
+    conn.commit()
+
+    return {"status": "recorded" if created else "duplicate",
+            "appid": appid, "buildid": buildid,
+            "previous": previous, "occurred_at": occurred_at}
 
 
 class RevalidatingStatics(StaticFiles):
