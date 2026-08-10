@@ -1,0 +1,19 @@
+# Passage toutes les 5 minutes.
+#
+# 5 et non 1 : chaque passage coute deux requetes sortantes et une sonde qui
+# traverse le tunnel, et la panne qu'on surveille se compte en heures, pas en
+# secondes. 5 minutes plafonnent l'indisponibilite a ~7 min (5 de detection +
+# le temps d'un redemarrage), contre 3 jours sans watchdog.
+#
+# OnBootSec=5min : au demarrage, laisser le collecteur se connecter a Steam et
+# cloudflared annoncer son adresse avant de juger qu'ils sont muets.
+[Unit]
+Description=Verifie periodiquement que steamtrack tourne vraiment
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,23 @@
+# Watchdog steamtrack : relance les services figes (voir deploy/watchdog.sh).
+# A copier dans /etc/systemd/system/ avec son timer, puis :
+#   systemctl daemon-reload && systemctl enable --now steamtrack-watchdog.timer
+[Unit]
+Description=Watchdog steamtrack (collecteur, API, tunnel)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Invoque par bash plutot que directement, comme publish-tunnel-url : un
+# deploiement qui perd le bit +x ne doit pas desarmer silencieusement la seule
+# chose qui surveille le reste.
+ExecStart=/bin/bash /opt/steamtrack/deploy/watchdog.sh
+User=root
+
+# Un passage qui repare peut etre long : deux sondes de tunnel espacees de 15 s,
+# puis l'arret du collecteur (jusqu'a 30 s) et la publication de la nouvelle
+# adresse. 5 minutes couvrent le pire cas sans jamais chevaucher le timer.
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target
