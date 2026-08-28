@@ -1,0 +1,11 @@
+# Declenche le workflow du tracker Fading Echo (voir dispatch-fe-tracker.sh).
+[Unit]
+Description=Declenche le tracker Fading Echo sur GitHub Actions
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /opt/steamtrack/deploy/dispatch-fe-tracker.sh
+# Le jeton GitHub n'est lisible que par root, comme pour publish-tunnel-url.
+User=root

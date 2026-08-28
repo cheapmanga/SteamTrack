@@ -1,0 +1,20 @@
+# Toutes les 15 minutes.
+#
+# Le workflow vise 10 minutes ; on ne cherche pas a les tenir depuis ici. Le
+# script ne declenche que si le dernier run date de plus de 12 minutes, donc en
+# regime normal ce timer ne fait qu'une lecture d'API. Sa raison d'etre, ce sont
+# les trous de plusieurs heures que laisse le planificateur de GitHub : 15
+# minutes suffisent largement a les combler.
+[Unit]
+Description=Reveil periodique du tracker Fading Echo
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=15min
+# Repartir le declenchement dans la minute : taper la seconde ronde n'apporte
+# rien et c'est precisement ce que GitHub sanctionne cote cron.
+RandomizedDelaySec=60
+Persistent=true
+
+[Install]
+WantedBy=timers.target
